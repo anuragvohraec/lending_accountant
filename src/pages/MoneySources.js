@@ -1,4 +1,4 @@
-import { getMoneySources, saveMoneySource, deleteMoneySource, getAllTransactions, addAuditLog } from '../db/database.js'
+import { getMoneySources, saveMoneySource, deleteMoneySource, getAllTransactions, getAllSourceTransactions, addAuditLog } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, sourceTypeIcon } from '../utils/formatters.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm } from '../components/Modal.js'
@@ -20,14 +20,29 @@ export async function renderMoneySources(container, navigate) {
   `
 
   const removeLoader = showSkeleton(container.querySelector('#sources-list'))
-  const [sources, allTxns] = await Promise.all([getMoneySources(), getAllTransactions()])
+  const [sources, allTxns, allSrcTxns] = await Promise.all([getMoneySources(), getAllTransactions(), getAllSourceTransactions()])
   removeLoader()
-  renderSourceList(container, sources, allTxns, navigate)
+
+  const balances = {}
+  for (const src of sources) {
+    const srcTxns = allSrcTxns.filter((t) => t.sourceId === src._id)
+    const principalTxns = allTxns.filter((t) => {
+      if (!t.sourceAllocations || t.category === 'interest') return false
+      return t.sourceAllocations.some((a) => a.sourceId === src._id)
+    })
+    const credits = srcTxns.filter((t) => t.type === 'credit').reduce((s, t) => s + t.amount, 0)
+    const debits = srcTxns.filter((t) => t.type === 'debit').reduce((s, t) => s + t.amount, 0)
+    const loansGiven = principalTxns.filter((t) => t.type === 'debit').reduce((s, t) => s + (t.sourceAllocations?.find((a) => a.sourceId === src._id)?.amount || 0), 0)
+    const repayments = principalTxns.filter((t) => t.type === 'credit').reduce((s, t) => s + (t.sourceAllocations?.find((a) => a.sourceId === src._id)?.amount || 0), 0)
+    balances[src._id] = (src.openingBalance || 0) + credits - debits - loansGiven + repayments
+  }
+
+  renderSourceList(container, sources, allTxns, balances, navigate)
 
   window.__sourceForm = () => showSourceForm(null, sources, allTxns, container)
 }
 
-function renderSourceList(container, sources, allTxns, navigate) {
+function renderSourceList(container, sources, allTxns, balances, navigate) {
   const el = document.getElementById('sources-list')
   if (sources.length === 0) {
     el.innerHTML = `
@@ -40,26 +55,21 @@ function renderSourceList(container, sources, allTxns, navigate) {
     return
   }
 
-  const totalBalance = sources.reduce((s, src) => s + (src.currentBalance ?? src.openingBalance ?? 0), 0)
+  const totalBalance = Object.values(balances).reduce((s, b) => s + b, 0)
   const activeCount = sources.filter((s) => s.status !== 'inactive').length
 
   el.innerHTML = `
     <div class="card-flat flex items-center justify-between mb-1">
       <div>
         <div class="stat-value text-primary">${formatCurrency(totalBalance)}</div>
-        <div class="stat-label">Total Balance (${activeCount} active)</div>
+        <div class="stat-label">Current Balance (${activeCount} active)</div>
       </div>
     </div>
     ${sources.map((src) => {
-      const balance = src.currentBalance ?? src.openingBalance ?? 0
-      const lentOut = allTxns.filter((t) => {
-        if (t.type !== 'debit') return false
-        if (t.sourceAllocations) return t.sourceAllocations.some((a) => a.sourceId === src._id)
-        return false
-      }).reduce((s, t) => s + (t.sourceAllocations?.find((a) => a.sourceId === src._id)?.amount || 0), 0)
+      const balance = balances[src._id] ?? 0
 
       return `
-        <div class="card-flat ${src.status === 'inactive' ? 'opacity-60' : ''}">
+        <div class="card-flat source-card ${src.status === 'inactive' ? 'opacity-60' : ''}" data-id="${src._id}">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3 flex-1 min-w-0">
               <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-${src.type === 'cash' ? 'green' : src.type === 'bank' ? 'blue' : src.type === 'partner' ? 'purple' : 'gray'}-50 flex items-center justify-center text-${src.type === 'cash' ? 'green' : src.type === 'bank' ? 'blue' : src.type === 'partner' ? 'purple' : 'gray'}-600">
@@ -72,7 +82,6 @@ function renderSourceList(container, sources, allTxns, navigate) {
             </div>
             <div class="text-right">
               <div class="font-mono font-bold text-sm">${formatCurrencyFull(balance)}</div>
-              ${lentOut > 0 ? `<div class="text-xs text-amber-600">${formatCurrency(lentOut)} lent</div>` : ''}
             </div>
           </div>
           <div class="flex gap-2 mt-3 pt-3 border-t border-gray-50">
@@ -83,6 +92,13 @@ function renderSourceList(container, sources, allTxns, navigate) {
       `
     }).join('')}
   `
+
+  el.querySelectorAll('.source-card').forEach((card) => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.edit-source') || e.target.closest('.delete-source')) return
+      navigate('money-source-detail', { id: card.dataset.id })
+    })
+  })
 
   el.querySelectorAll('.edit-source').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -125,8 +141,8 @@ async function showSourceForm(editSource, sources, allTxns, container) {
         </select>
       </div>
       <div>
-        <label class="input-label">Opening Balance *</label>
-        <input class="input" id="sf-balance" type="number" step="0.01" value="${editSource?.openingBalance || editSource?.currentBalance || '0'}" />
+        <label class="input-label">Current Balance *</label>
+        <input class="input" id="sf-balance" type="number" step="0.01" value="${editSource?.currentBalance ?? editSource?.openingBalance ?? '0'}" />
       </div>
       <div>
         <label class="input-label">Status</label>

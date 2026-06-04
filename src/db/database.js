@@ -120,6 +120,33 @@ export async function deleteCollateral(id) {
   return db.remove(doc)
 }
 
+export async function getSourceTransactions(sourceId) {
+  const all = await allDocs('srctxn_')
+  let filtered = sourceId ? all.filter((t) => t.sourceId === sourceId) : all
+  return filtered.sort((a, b) => new Date(a.date) - new Date(b.date))
+}
+
+export async function getAllSourceTransactions() {
+  return allDocs('srctxn_')
+}
+
+export async function saveSourceTransaction(data) {
+  const db = getDb()
+  if (data._id) {
+    const existing = await db.get(data._id)
+    return db.put({ ...existing, ...data })
+  }
+  data._id = 'srctxn_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  data.createdAt = new Date().toISOString()
+  return db.put(data)
+}
+
+export async function deleteSourceTransaction(id) {
+  const db = getDb()
+  const doc = await db.get(id)
+  return db.remove(doc)
+}
+
 export async function getAuditLogs(limit = 50) {
   const all = await allDocs('audit_')
   return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit)

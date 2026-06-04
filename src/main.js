@@ -1,6 +1,7 @@
 import { registerRoute, initRouter } from './router.js'
 import { renderDashboard } from './pages/Dashboard.js'
 import { renderMoneySources } from './pages/MoneySources.js'
+import { renderMoneySourceDetail } from './pages/MoneySourceDetail.js'
 import { renderParties } from './pages/Parties.js'
 import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
@@ -9,6 +10,7 @@ import { isPinSet, verifyPin } from './services/pin.js'
 
 registerRoute('dashboard', renderDashboard)
 registerRoute('money-sources', renderMoneySources)
+registerRoute('money-source-detail', renderMoneySourceDetail)
 registerRoute('parties', renderParties)
 registerRoute('party-detail', renderPartyDetail)
 registerRoute('search', renderSearch)
