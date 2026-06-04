@@ -1,6 +1,6 @@
 import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
-import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getSourceWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
+import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getPartnerWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm, showPrompt } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -85,7 +85,7 @@ export async function renderPartyDetail(container, navigate, params) {
       ` : ''}
 
       <div id="source-allocation" class="card">
-        <h3 class="font-semibold text-sm mb-3">Source-wise Outstanding</h3>
+        <h3 class="font-semibold text-sm mb-3">Partner-wise Outstanding</h3>
         <div id="source-outstanding-list"></div>
       </div>
 
@@ -157,19 +157,18 @@ function renderInterestSummary(allTxns, party) {
 
 function renderSourceOutstanding(allTxns, sources) {
   const el = document.getElementById('source-outstanding-list')
-  const sourceWise = getSourceWiseOutstanding(allTxns)
-  const entries = Object.entries(sourceWise)
+  const partnerWise = getPartnerWiseOutstanding(allTxns, sources)
+  const entries = Object.entries(partnerWise)
 
   if (entries.length === 0) {
-    el.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No source allocations</p>'
+    el.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No partner allocations</p>'
     return
   }
 
-  el.innerHTML = entries.map(([sourceId, amount]) => {
-    const source = sources.find((s) => s._id === sourceId)
+  el.innerHTML = entries.map(([owner, amount]) => {
     return `
       <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-        <span class="text-sm">${source?.name || 'Unknown source'}</span>
+        <span class="text-sm">${owner}</span>
         <span class="${amount > 0 ? 'amount-negative' : 'amount-neutral'} text-sm">${formatCurrencyFull(amount)}</span>
       </div>
     `

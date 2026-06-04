@@ -138,22 +138,24 @@ export function calculateMonthlyCharges({ transactions, rate, fromDate, toDate }
   return entries
 }
 
-export function getSourceWiseOutstanding(transactions, asOfDate) {
-  const sourceMap = {}
+export function getPartnerWiseOutstanding(transactions, sources, asOfDate) {
+  const ownerMap = {}
   const cutoff = asOfDate ? new Date(asOfDate) : new Date()
   for (const t of transactions) {
     if (!isPrincipal(t)) continue
     if (new Date(t.date) > cutoff) continue
     if (t.sourceAllocations) {
       for (const alloc of t.sourceAllocations) {
-        if (!sourceMap[alloc.sourceId]) sourceMap[alloc.sourceId] = 0
-        if (t.type === 'debit') sourceMap[alloc.sourceId] += alloc.amount
-        else sourceMap[alloc.sourceId] -= alloc.amount
+        const src = sources.find((s) => s._id === alloc.sourceId)
+        const key = src?.owner || src?.name || alloc.sourceId
+        if (!ownerMap[key]) ownerMap[key] = 0
+        if (t.type === 'debit') ownerMap[key] += alloc.amount
+        else ownerMap[key] -= alloc.amount
       }
     }
   }
-  for (const key in sourceMap) {
-    sourceMap[key] = Math.round(sourceMap[key] * 100) / 100
+  for (const key in ownerMap) {
+    ownerMap[key] = Math.round(ownerMap[key] * 100) / 100
   }
-  return sourceMap
+  return ownerMap
 }
