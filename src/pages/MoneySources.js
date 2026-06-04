@@ -58,12 +58,27 @@ function renderSourceList(container, sources, allTxns, balances, navigate) {
   const totalBalance = Object.values(balances).reduce((s, b) => s + b, 0)
   const activeCount = sources.filter((s) => s.status !== 'inactive').length
 
+  const partnerBalances = {}
+  for (const src of sources) {
+    const key = src.owner || 'Unassigned'
+    partnerBalances[key] = (partnerBalances[key] || 0) + (balances[src._id] ?? 0)
+  }
+
   el.innerHTML = `
     <div class="card-flat flex items-center justify-between mb-1">
       <div>
         <div class="stat-value text-primary">${formatCurrency(totalBalance)}</div>
         <div class="stat-label">Current Balance (${activeCount} active)</div>
       </div>
+    </div>
+    <div class="card-flat !bg-gradient-to-br !from-indigo-50/50 !to-purple-50/50 mb-3">
+      <h3 class="font-semibold text-sm mb-2">Partner-wise Balances</h3>
+      ${Object.entries(partnerBalances).map(([partner, amt]) => `
+        <div class="flex items-center justify-between py-1.5">
+          <span class="text-sm">${partner}</span>
+          <span class="font-mono font-semibold text-sm">${formatCurrencyFull(amt)}</span>
+        </div>
+      `).join('')}
     </div>
     ${sources.map((src) => {
       const balance = balances[src._id] ?? 0

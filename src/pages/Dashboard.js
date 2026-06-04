@@ -1,4 +1,4 @@
-import { getMoneySources, getParties, getAllTransactions, getCollaterals } from '../db/database.js'
+import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
 import { getOutstandingForParty } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
@@ -48,8 +48,8 @@ export async function renderDashboard(container) {
   document.getElementById('refresh-dash')?.addEventListener('click', () => renderDashboard(container))
 
   const removeLoader = showSkeleton(document.getElementById('dash-summary'))
-  const [sources, parties, allTxns, collaterals] = await Promise.all([
-    getMoneySources(), getParties(), getAllTransactions(), getCollaterals(),
+  const [sources, parties, allTxns, collaterals, allSrcTxns] = await Promise.all([
+    getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(),
   ])
   removeLoader()
 
@@ -69,7 +69,21 @@ export async function renderDashboard(container) {
     .filter((t) => t.category === 'interest' && t.type === 'payment')
     .reduce((s, t) => s + t.amount, 0)
 
-  const totalSourceBalance = activeSources.reduce((s, src) => s + (src.currentBalance || src.openingBalance || 0), 0)
+  const sourceBalances = {}
+  for (const src of activeSources) {
+    const srcTxns = allSrcTxns.filter((t) => t.sourceId === src._id)
+    const principalTxns = allTxns.filter((t) => {
+      if (!t.sourceAllocations || t.category === 'interest') return false
+      return t.sourceAllocations.some((a) => a.sourceId === src._id)
+    })
+    const credits = srcTxns.filter((t) => t.type === 'credit').reduce((s, t) => s + t.amount, 0)
+    const debits = srcTxns.filter((t) => t.type === 'debit').reduce((s, t) => s + t.amount, 0)
+    const loansGiven = principalTxns.filter((t) => t.type === 'debit').reduce((s, t) => s + (t.sourceAllocations?.find((a) => a.sourceId === src._id)?.amount || 0), 0)
+    const repayments = principalTxns.filter((t) => t.type === 'credit').reduce((s, t) => s + (t.sourceAllocations?.find((a) => a.sourceId === src._id)?.amount || 0), 0)
+    sourceBalances[src._id] = (src.openingBalance || 0) + credits - debits - loansGiven + repayments
+  }
+
+  const totalSourceBalance = Object.values(sourceBalances).reduce((s, b) => s + b, 0)
   const totalSecurity = collaterals.filter((c) => c.status === 'held').reduce((s, c) => s + (c.estimatedValue || 0), 0)
   const overdueParties = activeParties.filter((p) => {
     const partyTxns = allTxns.filter((t) => t.partyId === p._id)
@@ -136,7 +150,7 @@ export async function renderDashboard(container) {
           </div>
         </div>
         <div class="text-right">
-          <div class="font-mono font-semibold text-sm">${formatCurrencyFull(s.currentBalance || s.openingBalance || 0)}</div>
+          <div class="font-mono font-semibold text-sm">${formatCurrencyFull(sourceBalances[s._id] ?? 0)}</div>
         </div>
       </div>
     `).join('')

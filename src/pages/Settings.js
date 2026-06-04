@@ -5,12 +5,15 @@ import { exportBackup, importBackup } from '../services/export.js'
 import { isPinSet, setPin, verifyPin, clearPin } from '../services/pin.js'
 import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getCollaterals } from '../db/database.js'
 import { formatDateTime } from '../utils/formatters.js'
+import { startSync, stopSync, getSyncState, onSyncStatus, clearSyncListeners } from '../services/sync.js'
 
 export async function renderSettings(container, navigate) {
   renderHeader('Settings')
+  clearSyncListeners()
 
   const hasPin = await isPinSet()
   const settings = await getSettings()
+  const syncState = getSyncState()
 
   container.innerHTML = `
     <div class="space-y-4 slide-up">
@@ -50,6 +53,31 @@ export async function renderSettings(container, navigate) {
             </div>
           </button>
           ${settings.lastBackup ? `<div class="px-3 text-xs text-green-600 flex items-center gap-1"><ion-icon name="checkmark-circle-outline"></ion-icon> Last backup: ${formatDateTime(settings.lastBackup)}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="font-semibold text-sm mb-3">CouchDB Sync</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="input-label">Server URL</label>
+            <input class="input" id="couch-url" type="url" value="${settings.couchUrl || ''}" placeholder="http://192.168.1.100:5984/dbname" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="input-label">Username</label>
+              <input class="input" id="couch-user" value="${settings.couchUsername || ''}" placeholder="admin" />
+            </div>
+            <div>
+              <label class="input-label">Password</label>
+              <input class="input" id="couch-pass" type="password" value="${settings.couchPassword || ''}" placeholder="••••••••" />
+            </div>
+          </div>
+          <div class="flex items-center gap-3 pt-1">
+            <button class="btn-primary flex-1 text-sm" id="save-couch">Save & Connect</button>
+            <button class="${syncState.active ? 'btn-danger' : 'btn-outline'} text-sm" id="toggle-sync">${syncState.active ? 'Stop Sync' : 'Start Sync'}</button>
+          </div>
+          <div id="sync-status" class="text-xs text-gray-400 flex items-center gap-1 min-h-[1.25rem]"></div>
         </div>
       </div>
 
@@ -142,5 +170,45 @@ export async function renderSettings(container, navigate) {
       }
     }
     input.click()
+  })
+
+  const syncStatusEl = document.getElementById('sync-status')
+  const toggleBtn = document.getElementById('toggle-sync')
+
+  const syncMsg = (text, cls = 'text-gray-400') => { if (syncStatusEl) syncStatusEl.innerHTML = `<span class="${cls}">${text}</span>` }
+
+  if (syncState.active) syncMsg('Sync is running...', 'text-green-600')
+
+  const unsub = onSyncStatus((ev) => {
+    if (ev.type === 'started') { syncMsg('Sync started', 'text-green-600'); toggleBtn.textContent = 'Stop Sync'; toggleBtn.className = 'btn-danger text-sm' }
+    else if (ev.type === 'stopped') { syncMsg('Sync stopped', 'text-gray-400'); toggleBtn.textContent = 'Start Sync'; toggleBtn.className = 'btn-outline text-sm' }
+    else if (ev.type === 'change') { syncMsg(`Synced ${ev.docs} doc(s) ${ev.dir}`, 'text-primary') }
+    else if (ev.type === 'error') { syncMsg(`Error: ${ev.message}`, 'text-red-500') }
+    else if (ev.type === 'paused') { ev.err ? syncMsg(`Paused: ${ev.err}`, 'text-amber-600') : syncMsg('Up to date', 'text-green-600') }
+    else if (ev.type === 'active') { syncMsg('Syncing...', 'text-primary') }
+  })
+
+  document.getElementById('save-couch')?.addEventListener('click', async () => {
+    const url = document.getElementById('couch-url')?.value.trim()
+    if (!url) { showToast('Server URL is required', 'error'); return }
+    await saveSettings({
+      couchUrl: url,
+      couchUsername: document.getElementById('couch-user')?.value.trim() || '',
+      couchPassword: document.getElementById('couch-pass')?.value || '',
+    })
+    showToast('Settings saved')
+  })
+
+  toggleBtn?.addEventListener('click', async () => {
+    const state = getSyncState()
+    if (state.active) {
+      stopSync()
+    } else {
+      try {
+        await startSync()
+      } catch (err) {
+        showToast(err.message, 'error')
+      }
+    }
   })
 }
