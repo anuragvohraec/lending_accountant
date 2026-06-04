@@ -1,4 +1,4 @@
-export function showModal({ title, content, onConfirm, confirmText = 'Save', cancelText = 'Cancel', showCancel = true, danger = false }) {
+export function showModal({ title, content, onConfirm, onMounted, confirmText = 'Save', cancelText = 'Cancel', showCancel = true, danger = false }) {
   const container = document.getElementById('modal-container')
   const modal = document.createElement('div')
   modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center fade-in'
@@ -17,6 +17,7 @@ export function showModal({ title, content, onConfirm, confirmText = 'Save', can
     </div>
   `
   container.appendChild(modal)
+  if (typeof onMounted === 'function') onMounted()
 
   const dismiss = () => { modal.remove() }
   modal.querySelectorAll('[data-dismiss]').forEach((el) => el.addEventListener('click', dismiss))

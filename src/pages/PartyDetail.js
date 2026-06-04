@@ -237,7 +237,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
           <div class="flex items-center gap-2">
             <input type="checkbox" id="alloc-src-${s._id}" class="rounded border-gray-300 text-primary focus:ring-primary src-check" data-id="${s._id}" ${i === 0 ? 'checked' : ''} />
             <label for="alloc-src-${s._id}" class="text-sm flex-1">${s.name}</label>
-            <input type="number" step="0.01" class="input w-28 text-sm alloc-amount" data-id="${s._id}" placeholder="Amount" ${i === 0 ? 'required' : 'disabled'} />
+            <input type="number" step="0.01" class="input w-28 text-sm alloc-amount" data-id="${s._id}" placeholder="Amount" ${i === 0 ? '' : 'disabled'} />
           </div>
         `).join('')}
       </div>
@@ -279,6 +279,14 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
     title: isEdit ? 'Edit Transaction' : 'New Transaction',
     content,
     confirmText: isEdit ? 'Update' : 'Add',
+    onMounted: () => {
+      document.getElementById('source-allocs')?.addEventListener('change', (e) => {
+        if (e.target.classList.contains('src-check')) {
+          const input = document.querySelector(`.alloc-amount[data-id="${e.target.dataset.id}"]`)
+          if (input) input.disabled = !e.target.checked
+        }
+      })
+    },
     onConfirm: () => {
       const amount = parseFloat(document.getElementById('txn-amount')?.value)
       if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
@@ -308,7 +316,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
   if (isEdit) result._id = editTxn._id
 
   await saveTransaction(result)
-  logAction(isEdit ? 'update' : 'create', 'transaction', data._id || '', `${isEdit ? 'Updated' : 'Added'} ${data.type} transaction of ${amount}`)
+  logAction(isEdit ? 'update' : 'create', 'transaction', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${result.type} transaction of ${result.amount}`)
   showToast(isEdit ? 'Transaction updated' : 'Transaction added')
   renderPartyDetail(container, navigate, { id: party._id })
 }
@@ -507,10 +515,14 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
 async function showInterestPreview(party, allTxns) {
   const outstanding = getOutstandingForParty(allTxns)
   const asOfDate = new Date().toISOString().split('T')[0]
+  const firstTxnDate = allTxns.length > 0
+    ? [...allTxns].sort((a, b) => new Date(a.date) - new Date(b.date))[0]?.date?.split('T')[0]
+    : null
+  const fromDate = firstTxnDate || party.createdAt?.split('T')[0] || asOfDate
   const interest = calculateInterest({
     principal: Math.max(0, outstanding),
     rate: party.interestRate,
-    fromDate: party.createdAt?.split('T')[0] || asOfDate,
+    fromDate,
     toDate: asOfDate,
   })
 

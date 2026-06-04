@@ -62,14 +62,12 @@ export async function renderParties(container, navigate) {
               ${(p.name || '?').charAt(0).toUpperCase()}
             </div>
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="font-semibold text-sm truncate">${p.name}</span>
+              <div class="font-semibold text-sm">${p.name}</div>
+              <div class="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
                 <span class="${statusClass}">${p.status}</span>
-              </div>
-              <div class="text-xs text-gray-400 flex items-center gap-2">
                 ${p.phone ? `<span>${p.phone}</span>` : ''}
-                ${p.riskCategory ? `<span class="capitalize">· ${p.riskCategory} risk</span>` : ''}
               </div>
+              ${p.riskCategory ? `<div class="text-xs text-gray-400 mt-0.5 capitalize">${p.riskCategory} risk</div>` : ''}
             </div>
             <div class="text-right">
               <div class="${outstanding > 0 ? 'amount-negative' : 'amount-neutral'}">${formatCurrencyFull(Math.abs(outstanding))}</div>
