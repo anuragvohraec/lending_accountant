@@ -275,9 +275,12 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
             ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5">${t.notes}</div>` : ''}
             ${hasBreakdown ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View calculation &rsaquo;</button>` : ''}
           </div>
-          <div class="text-right ml-3">
-            <div class="${t.type === 'charge' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'charge' ? '+' : '-'}${formatCurrencyFull(t.amount)}</div>
-            <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+          <div class="flex items-center gap-2 ml-3">
+            ${t.type === 'payment' ? `<button class="btn-icon text-gray-300 hover:text-red-500 delete-int-payment" data-id="${t._id}" title="Delete"><ion-icon name="trash-outline" class="text-lg"></ion-icon></button>` : ''}
+            <div class="text-right">
+              <div class="${t.type === 'charge' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'charge' ? '+' : '-'}${formatCurrencyFull(t.amount)}</div>
+              <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+            </div>
           </div>
         </div>
         ${hasBreakdown ? `
@@ -316,6 +319,17 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
       </div>
     `
   }).join('')
+
+  el.querySelectorAll('.delete-int-payment').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const confirmed = await showConfirm({ title: 'Delete Payment?', message: 'This will remove this interest payment entry.', confirmText: 'Delete', danger: true })
+      if (!confirmed) return
+      await deleteTransaction(btn.dataset.id)
+      logAction('delete', 'transaction', btn.dataset.id, 'Deleted interest payment')
+      showToast('Interest payment deleted')
+      renderPartyDetail(container, navigate, { id: party._id })
+    })
+  })
 }
 
 async function showTransactionForm(editTxn, party, sources, allTxns, container, navigate) {
@@ -418,7 +432,13 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
 async function showInterestChargeForm(party, allTxns, sources, container, navigate) {
   const lastChargeDate = getLastInterestChargeDate(allTxns)
   const firstPrincipalDate = getFirstPrincipalDate(allTxns)
-  const fromDateDefault = lastChargeDate || firstPrincipalDate || party.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]
+
+  const fromDate = lastChargeDate ? (() => {
+    const d = new Date(lastChargeDate + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+  })() : (firstPrincipalDate || party.createdAt?.split('T')[0])
+
   const today = new Date().toISOString().split('T')[0]
 
   const content = `
@@ -427,8 +447,8 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
         <label class="input-label">Calculate Interest Up To</label>
         <input class="input" id="calc-to-date" type="date" value="${today}" />
       </div>
-      <p class="text-xs text-gray-400">Interest will be calculated from ${lastChargeDate ? 'the last charge date (' + lastChargeDate + ')' : 'the first transaction date'} to the selected date.</p>
-      ${!lastChargeDate && !firstPrincipalDate ? '<p class="text-xs text-amber-600">No transactions found. Interest will be zero until you add principal transactions.</p>' : ''}
+      <p class="text-xs text-gray-400">Interest will be calculated from <strong>${fromDate}</strong> to the selected date.</p>
+      ${!fromDate ? '<p class="text-xs text-amber-600">No starting date available.</p>' : ''}
     </div>
   `
 
@@ -440,7 +460,6 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
       const toDate = document.getElementById('calc-to-date')?.value
       if (!toDate) { showToast('Please select a date', 'error'); return false }
 
-      const fromDate = lastChargeDate || firstPrincipalDate || party.createdAt?.split('T')[0]
       if (!fromDate) return false
 
       const charges = calculateMonthlyCharges({
