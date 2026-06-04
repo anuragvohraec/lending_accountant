@@ -36,7 +36,7 @@ export function showModal({ title, content, onConfirm, onMounted, confirmText = 
       }
     })
     modal.querySelector('.modal-body')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
         const btn = document.getElementById('modal-confirm')
         if (btn) btn.click()
       }

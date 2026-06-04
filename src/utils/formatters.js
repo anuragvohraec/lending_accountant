@@ -54,7 +54,7 @@ export function sourceTypeIcon(type) {
 }
 
 export function collateralStatusColor(status) {
-  const map = { held: 'badge-blue', partially_released: 'badge-yellow', released: 'badge-green' }
+  const map = { held: 'badge-blue', released: 'badge-green' }
   return map[status] || 'badge-gray'
 }
 

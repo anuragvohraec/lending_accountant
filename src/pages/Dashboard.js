@@ -58,13 +58,16 @@ export async function renderDashboard(container) {
 
   let totalLent = 0
   let totalOutstanding = 0
-  let totalInterest = 0
   for (const p of activeParties) {
     const partyTxns = allTxns.filter((t) => t.partyId === p._id)
     const outstanding = getOutstandingForParty(partyTxns)
     totalLent += partyTxns.filter((t) => t.type === 'debit' && t.category !== 'interest').reduce((s, t) => s + t.amount, 0)
     totalOutstanding += Math.max(0, outstanding)
   }
+
+  const totalInterestIncome = allTxns
+    .filter((t) => t.category === 'interest' && t.type === 'payment')
+    .reduce((s, t) => s + t.amount, 0)
 
   const totalSourceBalance = activeSources.reduce((s, src) => s + (src.currentBalance || src.openingBalance || 0), 0)
   const totalSecurity = collaterals.filter((c) => c.status === 'held').reduce((s, c) => s + (c.estimatedValue || 0), 0)
@@ -78,6 +81,7 @@ export async function renderDashboard(container) {
   const summaryCards = [
     { label: 'Total Lent', value: formatCurrency(totalLent), color: 'text-vibgyor-indigo', icon: 'arrow-up-outline' },
     { label: 'Outstanding', value: formatCurrency(totalOutstanding), color: 'text-vibgyor-orange', icon: 'refresh-outline' },
+    { label: 'Interest Earned', value: formatCurrency(totalInterestIncome), color: 'text-amber-600', icon: 'trending-up-outline' },
     { label: 'Source Balance', value: formatCurrency(totalSourceBalance), color: 'text-vibgyor-green', icon: 'wallet-outline' },
     { label: 'Security Held', value: formatCurrency(totalSecurity), color: 'text-vibgyor-violet', icon: 'shield-checkmark-outline' },
     { label: 'Active Loans', value: activeParties.length, color: 'text-vibgyor-blue', icon: 'people-outline' },
@@ -141,8 +145,12 @@ export async function renderDashboard(container) {
   setupChart(allTxns, parties)
   document.querySelectorAll('.chart-period').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.chart-period').forEach((b) => b.classList.remove('bg-primary/10', 'text-primary'))
-      btn.classList.add('bg-primary/10', 'text-primary')
+      document.querySelectorAll('.chart-period').forEach((b) => {
+        b.classList.remove('active', 'bg-primary/10', 'text-primary')
+        b.classList.add('text-gray-500')
+      })
+      btn.classList.add('active', 'bg-primary/10', 'text-primary')
+      btn.classList.remove('text-gray-500')
       setupChart(allTxns, parties)
     })
   })
@@ -156,6 +164,8 @@ function setupChart(allTxns, parties) {
   const period = document.querySelector('.chart-period.active')?.dataset.period || 'month'
   const now = new Date()
 
+  const principalTxns = allTxns.filter((t) => !t.category || t.category === 'principal')
+
   let labels, debitData, creditData
   if (period === 'month') {
     const days = []
@@ -166,22 +176,23 @@ function setupChart(allTxns, parties) {
       d.setDate(d.getDate() - i)
       const key = d.toISOString().split('T')[0]
       days.push(d.getDate() + '/' + (d.getMonth() + 1))
-      debits.push(allTxns.filter((t) => t.type === 'debit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
-      credits.push(allTxns.filter((t) => t.type === 'credit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
+      debits.push(principalTxns.filter((t) => t.type === 'debit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
+      credits.push(principalTxns.filter((t) => t.type === 'credit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
     }
     labels = days; debitData = debits; creditData = credits
   } else {
-    const months = []
+    const years = []
     const debits = []
     const credits = []
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = d.toISOString().slice(0, 7)
-      months.push(d.toLocaleDateString('en-IN', { month: 'short' }))
-      debits.push(allTxns.filter((t) => t.type === 'debit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
-      credits.push(allTxns.filter((t) => t.type === 'credit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
+    const currentYear = now.getFullYear()
+    for (let i = 4; i >= 0; i--) {
+      const year = currentYear - i
+      const key = String(year)
+      years.push(key)
+      debits.push(principalTxns.filter((t) => t.type === 'debit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
+      credits.push(principalTxns.filter((t) => t.type === 'credit' && t.date.startsWith(key)).reduce((s, t) => s + t.amount, 0))
     }
-    labels = months; debitData = debits; creditData = credits
+    labels = years; debitData = debits; creditData = credits
   }
 
   charts.main = new Chart(canvas, {

@@ -1,6 +1,6 @@
 import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
-import { calculateInterest, calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getSourceWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
+import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getSourceWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm, showPrompt } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -23,7 +23,6 @@ export async function renderPartyDetail(container, navigate, params) {
   const outstanding = getOutstandingForParty(allTxns)
   const totalDebit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'debit').reduce((s, t) => s + t.amount, 0)
   const totalCredit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'credit').reduce((s, t) => s + t.amount, 0)
-  const pendingInterest = getInterestPending(allTxns)
   const heldCollateral = collaterals.filter((c) => c.status === 'held')
   const securityValue = heldCollateral.reduce((s, c) => s + (c.estimatedValue || 0), 0)
 
@@ -134,18 +133,11 @@ export async function renderPartyDetail(container, navigate, params) {
 function renderInterestSummary(allTxns, party) {
   const el = document.getElementById('interest-details')
   const outstanding = getOutstandingForParty(allTxns)
-  const pendingInterest = getInterestPending(allTxns)
-  const asOfDate = new Date().toISOString().split('T')[0]
-  const firstTxnDate = allTxns.length > 0
-    ? [...allTxns].sort((a, b) => new Date(a.date) - new Date(b.date))[0]?.date?.split('T')[0]
-    : null
-  const fromDate = firstTxnDate || party.createdAt?.split('T')[0] || asOfDate
-  const interest = calculateInterest({
-    principal: Math.max(0, outstanding),
-    rate: party.interestRate,
-    fromDate,
-    toDate: asOfDate,
-  })
+  const interestTxns = allTxns.filter((t) => t.category === 'interest')
+  const pendingInterest = interestTxns.reduce((s, t) => s + (t.type === 'charge' ? t.amount : -t.amount), 0)
+  const totalIncome = interestTxns
+    .filter((t) => t.type === 'payment')
+    .reduce((s, t) => s + t.amount, 0)
 
   el.innerHTML = `
     <div class="flex items-center justify-between py-1.5">
@@ -157,12 +149,8 @@ function renderInterestSummary(allTxns, party) {
       <span class="font-mono font-semibold text-sm ${pendingInterest > 0 ? 'text-amber-600' : ''}">${formatCurrencyFull(pendingInterest)}</span>
     </div>
     <div class="flex items-center justify-between py-1.5 border-t border-gray-100 mt-1.5 pt-2">
-      <span class="text-sm text-gray-500">Est. Interest (${interest.days}d)</span>
-      <span class="font-mono font-semibold text-sm text-amber-600">${formatCurrencyFull(interest.interest)}</span>
-    </div>
-    <div class="flex items-center justify-between py-1.5">
-      <span class="text-sm font-semibold">Total Payable</span>
-      <span class="font-mono font-bold text-sm text-red-500">${formatCurrencyFull(interest.total)}</span>
+      <span class="text-sm text-gray-500">Total Interest Income</span>
+      <span class="font-mono font-semibold text-sm text-green-600">${formatCurrencyFull(totalIncome)}</span>
     </div>
   `
 }
@@ -195,23 +183,55 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
     return
   }
 
-  el.innerHTML = collaterals.map((c) => `
-    <div class="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
-      <div class="flex items-center gap-2 flex-1 min-w-0">
-        <ion-icon name="${c.type === 'gold' ? 'diamond-outline' : c.type === 'electronics' ? 'laptop-outline' : c.type === 'vehicle' ? 'car-outline' : c.type === 'document' ? 'document-text-outline' : 'cube-outline'}" class="text-gray-400 text-lg"></ion-icon>
-        <div class="min-w-0">
-          <div class="text-sm font-medium truncate">${c.description || c.type}</div>
-          <div class="text-xs text-gray-400 flex items-center gap-2">
-            <span class="${collateralStatusColor(c.status)}">${c.status.replace('_', ' ')}</span>
-            ${c.serialNumber ? `<span>· ${c.serialNumber}</span>` : ''}
+  el.innerHTML = collaterals.map((c) => {
+    const updated = c.lastUpdated || c.dateAdded
+    return `
+    <div class="py-2.5 border-b border-gray-50 last:border-0">
+      <div class="flex items-start justify-between">
+        <div class="flex items-start gap-2 flex-1 min-w-0">
+          ${c.image ? `<img src="${c.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />` : `<div class="w-12 h-12 rounded-lg bg-gray-50 flex items-center justify-center shrink-0"><ion-icon name="${c.type === 'gold' ? 'diamond-outline' : c.type === 'electronics' ? 'laptop-outline' : c.type === 'vehicle' ? 'car-outline' : c.type === 'document' ? 'document-text-outline' : 'cube-outline'}" class="text-gray-400 text-lg"></ion-icon></div>`}
+          <div class="min-w-0">
+            <div class="text-sm font-medium truncate">${c.description || c.type}</div>
+            <div class="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
+              <span class="${collateralStatusColor(c.status)} status-toggle" data-id="${c._id}" data-status="${c.status}">${c.status === 'held' ? 'In Possession' : 'Returned'}</span>
+              ${c.serialNumber ? `<span>· ${c.serialNumber}</span>` : ''}
+            </div>
+            <div class="text-[10px] text-gray-400 mt-0.5">Updated ${formatDate(updated)}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ml-3">
+          <button class="btn-icon text-gray-300 hover:text-primary edit-collateral" data-id="${c._id}" title="Edit"><ion-icon name="create-outline" class="text-lg"></ion-icon></button>
+          <div class="text-right">
+            <div class="font-mono font-semibold text-sm">${formatCurrencyFull(c.estimatedValue || 0)}</div>
           </div>
         </div>
       </div>
-      <div class="text-right">
-        <div class="font-mono font-semibold text-sm">${formatCurrencyFull(c.estimatedValue || 0)}</div>
-      </div>
     </div>
-  `).join('')
+    `
+  }).join('')
+
+  el.querySelectorAll('.status-toggle').forEach((badge) => {
+    badge.addEventListener('click', async () => {
+      const id = badge.dataset.id
+      const current = badge.dataset.status
+      const newStatus = current === 'held' ? 'released' : 'held'
+      const confirmed = await showConfirm({ title: 'Change Status?', message: `Mark this collateral as ${newStatus === 'held' ? 'In Possession' : 'Returned'}?`, confirmText: 'Update', danger: false })
+      if (!confirmed) return
+      const col = collaterals.find((c) => c._id === id)
+      if (!col) return
+      await saveCollateral({ ...col, status: newStatus, lastUpdated: new Date().toISOString() })
+      logAction('update', 'collateral', id, `Changed collateral status to ${newStatus}`)
+      showToast(`Collateral marked as ${newStatus === 'held' ? 'In Possession' : 'Returned'}`)
+      renderPartyDetail(container, navigate, { id: party._id })
+    })
+  })
+
+  el.querySelectorAll('.edit-collateral').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = collaterals.find((c) => c._id === btn.dataset.id)
+      if (col) showCollateralForm(col, party._id, collaterals, party, allTxns, sources, container, navigate)
+    })
+  })
 }
 
 function renderPrincipalTransactions(txns, sources, party, container, navigate) {
@@ -551,8 +571,18 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
 
 async function showCollateralForm(editCollateral, partyId, collaterals, party, allTxns, sources, container, navigate) {
   const isEdit = !!editCollateral
+  let imageData = editCollateral?.image || ''
+
   const content = `
     <div class="space-y-3">
+      <div>
+        <label class="input-label">Photo</label>
+        <div class="flex items-center gap-3">
+          <input type="file" accept="image/*" id="col-image" class="hidden" />
+          <button class="btn-outline text-sm" id="col-image-btn"><ion-icon name="camera-outline" class="mr-1"></ion-icon>Choose Photo</button>
+          ${imageData ? `<img src="${imageData}" class="w-14 h-14 rounded-lg object-cover" />` : '<div id="col-image-preview" class="hidden"></div>'}
+        </div>
+      </div>
       <div>
         <label class="input-label">Type *</label>
         <select class="input" id="col-type">
@@ -582,9 +612,8 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
       <div>
         <label class="input-label">Status</label>
         <select class="input" id="col-status">
-          <option value="held" ${editCollateral?.status === 'held' || !editCollateral ? 'selected' : ''}>Held</option>
-          <option value="partially_released" ${editCollateral?.status === 'partially_released' ? 'selected' : ''}>Partially Released</option>
-          <option value="released" ${editCollateral?.status === 'released' ? 'selected' : ''}>Released</option>
+          <option value="held" ${editCollateral?.status === 'held' || !editCollateral ? 'selected' : ''}>In Possession</option>
+          <option value="released" ${editCollateral?.status === 'released' ? 'selected' : ''}>Returned</option>
         </select>
       </div>
       <div>
@@ -598,10 +627,29 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
     title: isEdit ? 'Edit Collateral' : 'Add Collateral',
     content,
     confirmText: isEdit ? 'Update' : 'Add',
+    onMounted: () => {
+      document.getElementById('col-image-btn')?.addEventListener('click', () => {
+        document.getElementById('col-image')?.click()
+      })
+      document.getElementById('col-image')?.addEventListener('change', (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = (ev) => {
+          imageData = ev.target.result
+          const preview = document.getElementById('col-image-preview')
+          if (preview) {
+            preview.innerHTML = `<img src="${imageData}" class="w-14 h-14 rounded-lg object-cover" />`
+            preview.classList.remove('hidden')
+          }
+        }
+        reader.readAsDataURL(file)
+      })
+    },
     onConfirm: () => {
       const desc = document.getElementById('col-desc')?.value.trim()
       if (!desc) { showToast('Description is required', 'error'); return false }
-      return {
+      const result = {
         partyId,
         type: document.getElementById('col-type')?.value || 'other',
         description: desc,
@@ -610,13 +658,16 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
         estimatedValue: parseFloat(document.getElementById('col-value')?.value) || 0,
         status: document.getElementById('col-status')?.value || 'held',
         notes: document.getElementById('col-notes')?.value.trim() || '',
+        lastUpdated: new Date().toISOString(),
       }
+      if (imageData) result.image = imageData
+      if (isEdit) result._id = editCollateral._id
+      return result
     },
   })
 
   if (!result || result === true) return
-
-  if (isEdit) result._id = editCollateral._id
+  if (!result._id) result._id = editCollateral?._id
 
   await saveCollateral(result)
   logAction(isEdit ? 'update' : 'create', 'collateral', result._id || '', `${isEdit ? 'Updated' : 'Added'} collateral: ${result.description}`)
