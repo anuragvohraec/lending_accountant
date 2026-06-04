@@ -62,7 +62,7 @@ export async function renderDashboard(container) {
   for (const p of activeParties) {
     const partyTxns = allTxns.filter((t) => t.partyId === p._id)
     const outstanding = getOutstandingForParty(partyTxns)
-    totalLent += partyTxns.filter((t) => t.type === 'debit').reduce((s, t) => s + t.amount, 0)
+    totalLent += partyTxns.filter((t) => t.type === 'debit' && t.category !== 'interest').reduce((s, t) => s + t.amount, 0)
     totalOutstanding += Math.max(0, outstanding)
   }
 

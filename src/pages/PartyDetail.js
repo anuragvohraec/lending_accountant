@@ -1,6 +1,6 @@
 import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
-import { calculateInterest, getOutstandingForParty, getSourceWiseOutstanding } from '../services/interest.js'
+import { calculateInterest, calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getSourceWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm, showPrompt } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -21,11 +21,11 @@ export async function renderPartyDetail(container, navigate, params) {
 
   const activeSources = sources.filter((s) => s.status !== 'inactive')
   const outstanding = getOutstandingForParty(allTxns)
-  const totalDebit = allTxns.filter((t) => t.type === 'debit').reduce((s, t) => s + t.amount, 0)
-  const totalCredit = allTxns.filter((t) => t.type === 'credit').reduce((s, t) => s + t.amount, 0)
+  const totalDebit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'debit').reduce((s, t) => s + t.amount, 0)
+  const totalCredit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'credit').reduce((s, t) => s + t.amount, 0)
+  const pendingInterest = getInterestPending(allTxns)
   const heldCollateral = collaterals.filter((c) => c.status === 'held')
   const securityValue = heldCollateral.reduce((s, c) => s + (c.estimatedValue || 0), 0)
-  const ltvRatio = outstanding > 0 && securityValue > 0 ? ((outstanding / securityValue) * 100).toFixed(1) : 'N/A'
 
   renderHeader(party.name, {
     onBack: () => navigate('parties'),
@@ -34,7 +34,8 @@ export async function renderPartyDetail(container, navigate, params) {
 
   document.getElementById('party-menu')?.addEventListener('click', () => showPartyMenu(party, allTxns, sources, container, navigate))
 
-  window.__txnForm = () => showTransactionForm(null, party, sources, allTxns, container, navigate)
+  const principalTxns = allTxns.filter((t) => !t.category || t.category === 'principal')
+  const interestTxns = allTxns.filter((t) => t.category === 'interest')
 
   container.innerHTML = `
     <div class="space-y-4 slide-up">
@@ -99,45 +100,67 @@ export async function renderPartyDetail(container, navigate, params) {
 
       <div class="card">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="font-semibold text-sm">Transaction History (${allTxns.length})</h3>
+          <h3 class="font-semibold text-sm">Principal Transaction History (${principalTxns.length})</h3>
+          <button class="text-xs text-primary font-medium" id="add-principal-btn">+ Add</button>
         </div>
-        <div id="txn-list"></div>
+        <div id="principal-txn-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-sm">Interest Transaction History (${interestTxns.length})</h3>
+          <div class="flex gap-2">
+            <button class="text-xs text-primary font-medium" id="calc-interest-btn">Calculate Interest</button>
+            <button class="text-xs text-primary font-medium" id="pay-interest-btn">Record Payment</button>
+          </div>
+        </div>
+        <div id="interest-txn-list"></div>
       </div>
     </div>
-    <button class="fab-btn fixed bottom-24 right-4 z-50 w-14 h-14 bg-gradient-to-br from-primary to-vibgyor-violet text-white rounded-full shadow-lg flex items-center justify-center active:scale-90 transition-transform" onclick="window.__txnForm()">
-      <span class="text-2xl font-bold leading-none">+</span>
-    </button>
   `
 
   if (party.interestRate > 0) renderInterestSummary(allTxns, party)
   renderSourceOutstanding(allTxns, sources)
   renderCollateralList(collaterals, party, allTxns, sources, container, navigate)
-  renderTransactionList(allTxns, sources, party, container, navigate)
+  renderPrincipalTransactions(principalTxns, sources, party, container, navigate)
+  renderInterestTransactions(interestTxns, sources, party, container, navigate)
 
   document.getElementById('add-collateral-btn')?.addEventListener('click', () => showCollateralForm(null, party._id, collaterals, party, allTxns, sources, container, navigate))
+  document.getElementById('add-principal-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, allTxns, container, navigate))
+  document.getElementById('calc-interest-btn')?.addEventListener('click', () => showInterestChargeForm(party, allTxns, sources, container, navigate))
+  document.getElementById('pay-interest-btn')?.addEventListener('click', () => showInterestPaymentForm(party, allTxns, sources, container, navigate))
 }
 
 function renderInterestSummary(allTxns, party) {
   const el = document.getElementById('interest-details')
   const outstanding = getOutstandingForParty(allTxns)
+  const pendingInterest = getInterestPending(allTxns)
   const asOfDate = new Date().toISOString().split('T')[0]
+  const firstTxnDate = allTxns.length > 0
+    ? [...allTxns].sort((a, b) => new Date(a.date) - new Date(b.date))[0]?.date?.split('T')[0]
+    : null
+  const fromDate = firstTxnDate || party.createdAt?.split('T')[0] || asOfDate
   const interest = calculateInterest({
     principal: Math.max(0, outstanding),
     rate: party.interestRate,
-    fromDate: party.createdAt?.split('T')[0] || asOfDate,
+    fromDate,
     toDate: asOfDate,
   })
 
   el.innerHTML = `
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-sm text-gray-500">Principal</span>
+      <span class="text-sm text-gray-500">Principal Outstanding</span>
       <span class="font-mono font-semibold text-sm">${formatCurrencyFull(outstanding)}</span>
     </div>
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-sm text-gray-500">Interest (${interest.days}d)</span>
-      <span class="font-mono font-semibold text-sm text-amber-600">${formatCurrencyFull(interest.interest)}</span>
+      <span class="text-sm text-gray-500">Pending Interest</span>
+      <span class="font-mono font-semibold text-sm ${pendingInterest > 0 ? 'text-amber-600' : ''}">${formatCurrencyFull(pendingInterest)}</span>
     </div>
     <div class="flex items-center justify-between py-1.5 border-t border-gray-100 mt-1.5 pt-2">
+      <span class="text-sm text-gray-500">Est. Interest (${interest.days}d)</span>
+      <span class="font-mono font-semibold text-sm text-amber-600">${formatCurrencyFull(interest.interest)}</span>
+    </div>
+    <div class="flex items-center justify-between py-1.5">
       <span class="text-sm font-semibold">Total Payable</span>
       <span class="font-mono font-bold text-sm text-red-500">${formatCurrencyFull(interest.total)}</span>
     </div>
@@ -191,15 +214,15 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
   `).join('')
 }
 
-function renderTransactionList(allTxns, sources, party, container, navigate) {
-  const el = document.getElementById('txn-list')
-  if (allTxns.length === 0) {
-    el.innerHTML = '<div class="empty-state"><ion-icon name="receipt-outline"></ion-icon><p class="text-xs text-gray-400">No transactions yet</p></div>'
+function renderPrincipalTransactions(txns, sources, party, container, navigate) {
+  const el = document.getElementById('principal-txn-list')
+  if (txns.length === 0) {
+    el.innerHTML = '<div class="empty-state"><ion-icon name="receipt-outline"></ion-icon><p class="text-xs text-gray-400">No principal transactions yet</p></div>'
     return
   }
 
   let runningBalance = 0
-  const sorted = [...allTxns].sort((a, b) => new Date(a.date) - new Date(b.date))
+  const sorted = [...txns].sort((a, b) => new Date(a.date) - new Date(b.date))
 
   el.innerHTML = sorted.map((t) => {
     runningBalance += t.type === 'debit' ? t.amount : -t.amount
@@ -220,6 +243,76 @@ function renderTransactionList(allTxns, sources, party, container, navigate) {
           <div class="${t.type === 'debit' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'debit' ? '-' : '+'}${formatCurrencyFull(t.amount)}</div>
           <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
         </div>
+      </div>
+    `
+  }).join('')
+}
+
+function renderInterestTransactions(txns, sources, party, container, navigate) {
+  const el = document.getElementById('interest-txn-list')
+  if (txns.length === 0) {
+    el.innerHTML = '<div class="empty-state"><ion-icon name="calculator-outline"></ion-icon><p class="text-xs text-gray-400">No interest transactions yet</p></div>'
+    return
+  }
+
+  let runningBalance = 0
+  const sorted = [...txns].sort((a, b) => new Date(a.date) - new Date(b.date))
+
+  el.innerHTML = sorted.map((t) => {
+    runningBalance += t.type === 'charge' ? t.amount : -t.amount
+    const hasBreakdown = t.type === 'charge' && t.breakdown && t.breakdown.length > 0
+    const rowId = 'brk-' + (t._id || Math.random().toString(36).slice(2))
+    const totalDays = hasBreakdown ? t.breakdown.reduce((s, b) => s + b.days, 0) : 0
+    return `
+      <div class="py-3 border-b border-gray-50 last:border-0">
+        <div class="flex items-start justify-between">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full ${t.type === 'charge' ? 'bg-amber-400' : 'bg-green-400'} shrink-0"></span>
+              <span class="text-sm font-medium">${t.type === 'charge' ? 'Interest Charged' : 'Interest Paid'}</span>
+            </div>
+            <div class="text-xs text-gray-400 mt-0.5">${formatDateTime(t.date)}</div>
+            ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5">${t.notes}</div>` : ''}
+            ${hasBreakdown ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View calculation &rsaquo;</button>` : ''}
+          </div>
+          <div class="text-right ml-3">
+            <div class="${t.type === 'charge' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'charge' ? '+' : '-'}${formatCurrencyFull(t.amount)}</div>
+            <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+          </div>
+        </div>
+        ${hasBreakdown ? `
+        <div id="${rowId}" class="hidden mt-3 overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="text-gray-400 border-b border-gray-100">
+                <th class="text-right pr-2 pb-1.5 font-medium">Debit</th>
+                <th class="text-right pr-2 pb-1.5 font-medium">Credit</th>
+                <th class="text-right pr-2 pb-1.5 font-medium">Outstanding</th>
+                <th class="text-left px-2 pb-1.5 font-medium">Date</th>
+                <th class="text-right px-2 pb-1.5 font-medium">Days</th>
+                <th class="text-right pl-2 pb-1.5 font-medium">Interest</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${t.breakdown.map((b) => `
+                <tr class="border-b border-gray-50">
+                  <td class="text-right pr-2 py-1.5 ${b.debit > 0 ? 'text-red-600 font-medium' : 'text-gray-300'}">${b.debit > 0 ? formatCurrencyFull(b.debit) : '-'}</td>
+                  <td class="text-right pr-2 py-1.5 ${b.credit > 0 ? 'text-green-600 font-medium' : 'text-gray-300'}">${b.credit > 0 ? formatCurrencyFull(b.credit) : '-'}</td>
+                  <td class="text-right pr-2 py-1.5 font-mono font-medium">${formatCurrencyFull(b.outstanding)}</td>
+                  <td class="text-left px-2 py-1.5 text-gray-500">${formatDate(b.date)}</td>
+                  <td class="text-right px-2 py-1.5 font-mono">${b.days}</td>
+                  <td class="text-right pl-2 py-1.5 font-mono text-amber-600">${formatCurrencyFull(b.amount)}</td>
+                </tr>
+              `).join('')}
+              <tr class="font-semibold border-t border-gray-200">
+                <td colspan="4" class="text-right pr-2 py-1.5"></td>
+                <td class="text-right px-2 py-1.5 font-mono">${totalDays}</td>
+                <td class="text-right pl-2 py-1.5 font-mono text-amber-600">${formatCurrencyFull(t.amount)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
       </div>
     `
   }).join('')
@@ -300,6 +393,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
 
       return {
         partyId: party._id,
+        category: 'principal',
         type: document.getElementById('txn-type')?.value || 'debit',
         amount,
         date: document.getElementById('txn-date')?.value || new Date().toISOString(),
@@ -316,8 +410,123 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
   if (isEdit) result._id = editTxn._id
 
   await saveTransaction(result)
-  logAction(isEdit ? 'update' : 'create', 'transaction', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${result.type} transaction of ${result.amount}`)
+  logAction(isEdit ? 'update' : 'create', 'transaction', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${result.type} principal transaction of ${result.amount}`)
   showToast(isEdit ? 'Transaction updated' : 'Transaction added')
+  renderPartyDetail(container, navigate, { id: party._id })
+}
+
+async function showInterestChargeForm(party, allTxns, sources, container, navigate) {
+  const lastChargeDate = getLastInterestChargeDate(allTxns)
+  const firstPrincipalDate = getFirstPrincipalDate(allTxns)
+  const fromDateDefault = lastChargeDate || firstPrincipalDate || party.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]
+  const today = new Date().toISOString().split('T')[0]
+
+  const content = `
+    <div class="space-y-3">
+      <div>
+        <label class="input-label">Calculate Interest Up To</label>
+        <input class="input" id="calc-to-date" type="date" value="${today}" />
+      </div>
+      <p class="text-xs text-gray-400">Interest will be calculated from ${lastChargeDate ? 'the last charge date (' + lastChargeDate + ')' : 'the first transaction date'} to the selected date.</p>
+      ${!lastChargeDate && !firstPrincipalDate ? '<p class="text-xs text-amber-600">No transactions found. Interest will be zero until you add principal transactions.</p>' : ''}
+    </div>
+  `
+
+  const result = await showModal({
+    title: 'Calculate Interest',
+    content,
+    confirmText: 'Calculate',
+    onConfirm: () => {
+      const toDate = document.getElementById('calc-to-date')?.value
+      if (!toDate) { showToast('Please select a date', 'error'); return false }
+
+      const fromDate = lastChargeDate || firstPrincipalDate || party.createdAt?.split('T')[0]
+      if (!fromDate) return false
+
+      const charges = calculateMonthlyCharges({
+        transactions: allTxns,
+        rate: party.interestRate,
+        fromDate,
+        toDate,
+      })
+
+      if (charges.length === 0) {
+        if (!party.interestRate || party.interestRate <= 0) {
+          showToast('Interest rate is 0%. Set an interest rate for this party.', 'error')
+        } else {
+          showToast('No interest accrued in this period', 'error')
+        }
+        return false
+      }
+
+      return { charges, fromDate, toDate }
+    },
+  })
+
+  if (!result || result === true) return
+  const { charges, fromDate: actualFromDate, toDate: actualToDate } = result
+  if (!charges || charges.length === 0) return
+
+  const totalInterest = charges.reduce((s, c) => s + c.amount, 0)
+  const data = {
+    partyId: party._id,
+    category: 'interest',
+    type: 'charge',
+    amount: Math.round(totalInterest * 100) / 100,
+    date: actualToDate,
+    notes: `Interest charged from ${actualFromDate} to ${actualToDate}`,
+    breakdown: charges,
+    updatedAt: new Date().toISOString(),
+  }
+
+  await saveTransaction(data)
+  logAction('create', 'transaction', party._id, `Calculated interest of ${data.amount} for ${party.name}`)
+  showToast(`Interest of ${formatCurrencyFull(data.amount)} charged`)
+  renderPartyDetail(container, navigate, { id: party._id })
+}
+
+async function showInterestPaymentForm(party, allTxns, sources, container, navigate) {
+  const content = `
+    <div class="space-y-3">
+      <div>
+        <label class="input-label">Amount *</label>
+        <input class="input" id="pay-amount" type="number" step="0.01" placeholder="0.00" />
+      </div>
+      <div>
+        <label class="input-label">Date</label>
+        <input class="input" id="pay-date" type="date" value="${new Date().toISOString().split('T')[0]}" />
+      </div>
+      <div>
+        <label class="input-label">Notes</label>
+        <textarea class="input" id="pay-notes" rows="2" placeholder="Optional notes"></textarea>
+      </div>
+    </div>
+  `
+
+  const result = await showModal({
+    title: 'Record Interest Payment',
+    content,
+    confirmText: 'Save',
+    onConfirm: () => {
+      const amount = parseFloat(document.getElementById('pay-amount')?.value)
+      if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
+      return {
+        partyId: party._id,
+        category: 'interest',
+        type: 'payment',
+        amount,
+        date: document.getElementById('pay-date')?.value || new Date().toISOString(),
+        notes: document.getElementById('pay-notes')?.value.trim() || 'Interest payment',
+        updatedAt: new Date().toISOString(),
+      }
+    },
+  })
+
+  if (!result || result === true) return
+
+  await saveTransaction(result)
+  logAction('create', 'transaction', result._id || '', `Recorded interest payment of ${result.amount}`)
+  showToast('Interest payment recorded')
   renderPartyDetail(container, navigate, { id: party._id })
 }
 
@@ -402,7 +611,6 @@ function showPartyMenu(party, allTxns, sources, container, navigate) {
     content: `
       <div class="space-y-1">
         <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm flex items-center gap-3" id="menu-edit"><ion-icon name="create-outline" class="text-gray-400"></ion-icon> Edit Party</button>
-        <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm flex items-center gap-3" id="menu-interest"><ion-icon name="calculator-outline" class="text-gray-400"></ion-icon> Calculate Interest</button>
         <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-red-50 text-sm flex items-center gap-3 text-red-500" id="menu-delete"><ion-icon name="trash-outline"></ion-icon> Delete Party</button>
       </div>
     `,
@@ -413,11 +621,6 @@ function showPartyMenu(party, allTxns, sources, container, navigate) {
   document.getElementById('menu-edit')?.addEventListener('click', () => {
     document.querySelector('[data-dismiss]')?.click()
     showPartyForm(party, [], [], container, navigate)
-  })
-
-  document.getElementById('menu-interest')?.addEventListener('click', () => {
-    document.querySelector('[data-dismiss]')?.click()
-    showInterestPreview(party, allTxns)
   })
 
   document.getElementById('menu-delete')?.addEventListener('click', async () => {
@@ -510,52 +713,4 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
   logAction('update', 'party', party._id, 'Updated party details')
   showToast('Party updated')
   renderPartyDetail(container, navigate, { id: party._id })
-}
-
-async function showInterestPreview(party, allTxns) {
-  const outstanding = getOutstandingForParty(allTxns)
-  const asOfDate = new Date().toISOString().split('T')[0]
-  const firstTxnDate = allTxns.length > 0
-    ? [...allTxns].sort((a, b) => new Date(a.date) - new Date(b.date))[0]?.date?.split('T')[0]
-    : null
-  const fromDate = firstTxnDate || party.createdAt?.split('T')[0] || asOfDate
-  const interest = calculateInterest({
-    principal: Math.max(0, outstanding),
-    rate: party.interestRate,
-    fromDate,
-    toDate: asOfDate,
-  })
-
-  showModal({
-    title: 'Interest Calculation',
-    content: `
-      <div class="space-y-3">
-        <div class="card-flat bg-gray-50">
-          <div class="flex justify-between py-1.5">
-            <span class="text-sm text-gray-500">Principal</span>
-            <span class="font-mono font-semibold">${formatCurrencyFull(outstanding > 0 ? outstanding : 0)}</span>
-          </div>
-          <div class="flex justify-between py-1.5">
-            <span class="text-sm text-gray-500">Rate</span>
-            <span class="font-mono font-semibold">${party.interestRate}% / month</span>
-          </div>
-          <div class="flex justify-between py-1.5">
-            <span class="text-sm text-gray-500">Period</span>
-            <span class="font-mono font-semibold">${interest.days} days</span>
-          </div>
-          <div class="flex justify-between py-1.5 border-t border-gray-200 mt-1.5 pt-2">
-            <span class="text-sm text-gray-500">Interest Accrued</span>
-            <span class="font-mono font-bold text-amber-600">${formatCurrencyFull(interest.interest)}</span>
-          </div>
-          <div class="flex justify-between py-1.5">
-            <span class="text-sm font-semibold">Total Payable</span>
-            <span class="font-mono font-bold text-red-500">${formatCurrencyFull(interest.total)}</span>
-          </div>
-        </div>
-        <p class="text-xs text-gray-400">Interest is calculated from the first transaction date to today.</p>
-      </div>
-    `,
-    confirmText: 'Done',
-    showCancel: false,
-  })
 }

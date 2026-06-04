@@ -68,10 +68,12 @@ export async function deleteParty(id) {
   return db.remove(doc)
 }
 
-export async function getTransactions(partyId) {
+export async function getTransactions(partyId, category) {
   const all = await allDocs('txn_')
-  if (partyId) return all.filter((t) => t.partyId === partyId).sort((a, b) => new Date(b.date) - new Date(a.date))
-  return all.sort((a, b) => new Date(b.date) - new Date(a.date))
+  let filtered = all.slice()
+  if (partyId) filtered = filtered.filter((t) => t.partyId === partyId)
+  if (category) filtered = filtered.filter((t) => t.category === category)
+  return filtered.sort((a, b) => new Date(b.date) - new Date(a.date))
 }
 
 export async function getAllTransactions() {
