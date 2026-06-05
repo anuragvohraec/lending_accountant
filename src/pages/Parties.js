@@ -71,9 +71,9 @@ export async function renderParties(container, navigate) {
               ${p.riskCategory ? `<div class="text-xs text-gray-400 mt-0.5 capitalize">${p.riskCategory} risk</div>` : ''}
             </div>
             <div class="text-right">
-              <div class="${outstanding > 0 ? 'amount-negative' : 'amount-neutral'}">${formatCurrencyFull(Math.abs(outstanding))}</div>
               <div class="text-xs text-gray-400">${outstanding > 0 ? 'Due' : 'Cleared'}</div>
-              ${pendingInterest > 0 ? `<div class="text-xs text-amber-600 mt-0.5">+${formatCurrencyFull(pendingInterest)} int.</div>` : ''}
+              <div class="${outstanding > 0 ? 'amount-negative' : 'amount-neutral'}">${formatCurrencyFull(Math.abs(outstanding))}</div>
+              ${pendingInterest > 0 ? `<div class="text-xs text-gray-400 mt-1">Int</div><div class="text-xs text-amber-600">${formatCurrencyFull(pendingInterest)}</div>` : ''}
             </div>
           </div>
         </div>
