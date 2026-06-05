@@ -6,7 +6,7 @@ import { renderParties } from './pages/Parties.js'
 import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
-import { isPinSet, verifyPin } from './services/pin.js'
+import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
 
 registerRoute('dashboard', renderDashboard)
 registerRoute('money-sources', renderMoneySources)
@@ -17,19 +17,33 @@ registerRoute('search', renderSearch)
 registerRoute('settings', renderSettings)
 
 async function init() {
-  const hasPin = await isPinSet()
-  if (hasPin) {
-    await showPinLock()
+  const locked = await isLockEnabled()
+  if (locked) {
+    await showAuthLock()
   }
 
   initRouter()
 }
 
-async function showPinLock() {
+async function showAuthLock() {
   const overlay = document.getElementById('pin-lock')
   overlay.classList.remove('hidden')
+
+  const method = await getLockMethod()
+  if (method === 'webauthn') {
+    const ok = await authenticateWithWebAuthn()
+    if (ok) {
+      overlay.classList.add('hidden')
+      return
+    }
+  }
+
+  showPinPad(overlay)
+}
+
+function showPinPad(overlay) {
   overlay.innerHTML = `
-    <div class="w-full max-w-xs px-6 text-center slide-up">
+    <div class="w-full max-w-xs px-6 text-center slide-up" id="pin-pad">
       <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-primary to-vibgyor-violet rounded-2xl flex items-center justify-center">
         <ion-icon name="lock-closed-outline" class="text-3xl text-white"></ion-icon>
       </div>

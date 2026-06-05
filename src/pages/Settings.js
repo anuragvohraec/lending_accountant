@@ -2,7 +2,7 @@ import { renderHeader } from '../components/Header.js'
 import { showToast } from '../components/Toast.js'
 import { showConfirm, showPrompt } from '../components/Modal.js'
 import { exportBackup, importBackup } from '../services/export.js'
-import { isPinSet, setPin, verifyPin, clearPin } from '../services/pin.js'
+import { isLockEnabled, getLockMethod, webauthnAvailable, setupWebAuthn, setPin, clearAuth } from '../services/pin.js'
 import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getCollaterals } from '../db/database.js'
 import { formatDateTime } from '../utils/formatters.js'
 import { startSync, stopSync, getSyncState, onSyncStatus, clearSyncListeners } from '../services/sync.js'
@@ -11,25 +11,28 @@ export async function renderSettings(container, navigate) {
   renderHeader('Settings')
   clearSyncListeners()
 
-  const hasPin = await isPinSet()
+  const lockEnabled = await isLockEnabled()
+  const lockMethod = await getLockMethod()
   const settings = await getSettings()
   const syncState = getSyncState()
+
+  const lockStatus = lockMethod === 'webauthn' ? 'Biometric enabled' : lockMethod === 'pin' ? 'PIN configured' : 'No lock configured'
 
   container.innerHTML = `
     <div class="space-y-4 slide-up">
       <div class="card">
         <h3 class="font-semibold text-sm mb-3">Security</h3>
         <div class="space-y-2">
-          <button class="w-full flex items-center justify-between px-3 py-3 rounded-xl hover:bg-gray-50" id="toggle-pin">
+          <button class="w-full flex items-center justify-between px-3 py-3 rounded-xl hover:bg-gray-50" id="toggle-lock">
             <div class="flex items-center gap-3">
               <ion-icon name="lock-closed-outline" class="text-gray-400 text-lg"></ion-icon>
               <div class="text-left">
-                <div class="text-sm font-medium">App Lock (PIN)</div>
-                <div class="text-xs text-gray-400">${hasPin ? 'PIN is set' : 'No PIN configured'}</div>
+                <div class="text-sm font-medium">App Lock</div>
+                <div class="text-xs text-gray-400">${lockStatus}</div>
               </div>
             </div>
-            <div class="w-10 h-6 rounded-full ${hasPin ? 'bg-primary' : 'bg-gray-200'} relative transition-colors">
-              <div class="w-4 h-4 bg-white rounded-full absolute top-1 ${hasPin ? 'right-1' : 'left-1'} shadow-sm transition-all"></div>
+            <div class="w-10 h-6 rounded-full ${lockEnabled ? 'bg-primary' : 'bg-gray-200'} relative transition-colors">
+              <div class="w-4 h-4 bg-white rounded-full absolute top-1 ${lockEnabled ? 'right-1' : 'left-1'} shadow-sm transition-all"></div>
             </div>
           </button>
         </div>
@@ -125,16 +128,27 @@ export async function renderSettings(container, navigate) {
     `).join('')
   }
 
-  document.getElementById('toggle-pin')?.addEventListener('click', async () => {
-    const hasPinNow = await isPinSet()
-    if (hasPinNow) {
-      const confirmed = await showConfirm({ title: 'Remove PIN?', message: 'This will disable the app lock.', confirmText: 'Remove', danger: true })
+  document.getElementById('toggle-lock')?.addEventListener('click', async () => {
+    const enabled = await isLockEnabled()
+    if (enabled) {
+      const confirmed = await showConfirm({ title: 'Remove App Lock?', message: 'This will disable the app lock.', confirmText: 'Remove', danger: true })
       if (confirmed) {
-        await clearPin()
-        showToast('PIN removed')
+        await clearAuth()
+        showToast('App lock removed')
         renderSettings(container, navigate)
       }
     } else {
+      const webauthnOk = await webauthnAvailable()
+      if (webauthnOk) {
+        try {
+          await setupWebAuthn()
+          showToast('Biometric lock enabled')
+          renderSettings(container, navigate)
+          return
+        } catch {
+          // user cancelled or failed — fall through to PIN
+        }
+      }
       const pin = await showPrompt({ title: 'Set PIN', message: 'Enter a 4-digit PIN to lock the app', inputType: 'password', placeholder: '****', confirmText: 'Set' })
       if (pin && pin.length >= 4) {
         await setPin(pin)

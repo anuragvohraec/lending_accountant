@@ -214,7 +214,7 @@ export async function getSettings() {
   try {
     return await getDb().get('app_settings')
   } catch {
-    return { _id: 'app_settings', pin: '', backupReminder: true, lastBackup: null }
+    return { _id: 'app_settings', pin: '', webauthnCredentialId: null, webauthnRpId: null, backupReminder: true, lastBackup: null }
   }
 }
 
