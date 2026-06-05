@@ -81,41 +81,38 @@ export function calculateMonthlyCharges({ transactions, rate, fromDate, toDate }
     .sort((a, b) => new Date(a.date) - new Date(b.date))
 
   let current = new Date(start)
-  let outstanding = getOutstandingForParty(transactions, toLocalDateStr(current))
+  const dayBefore = new Date(current)
+  dayBefore.setDate(dayBefore.getDate() - 1)
+  let outstanding = getOutstandingForParty(transactions, toLocalDateStr(dayBefore))
   let prevTxn = null
 
   for (const txn of sorted) {
     const txnDate = new Date(txn.date)
-    if (txnDate <= current) {
-      if (txnDate.getTime() === current.getTime()) {
-        prevTxn = txn
-        if (txn.type === 'debit') outstanding += txn.amount
-        else if (txn.type === 'credit') outstanding -= txn.amount
-      }
-      continue
-    }
+    if (txnDate < current) continue
     if (txnDate >= end) break
 
-    const days = Math.floor((txnDate - current) / 86400000)
-    if (days > 0 && outstanding > 0) {
-      const interestAmount = Math.round(outstanding * rate * days / 3000 * 100) / 100
-      if (interestAmount > 0) {
-        entries.push({
-          amount: interestAmount,
-          date: toLocalDateStr(txnDate),
-          fromDate: toLocalDateStr(current),
-          toDate: toLocalDateStr(txnDate),
-          days,
-          outstanding,
-          debit: prevTxn?.type === 'debit' ? prevTxn.amount : 0,
-          credit: prevTxn?.type === 'credit' ? prevTxn.amount : 0,
-        })
+    if (txnDate > current) {
+      const days = Math.floor((txnDate - current) / 86400000)
+      if (days > 0 && outstanding > 0) {
+        const interestAmount = Math.round(outstanding * rate * days / 3000 * 100) / 100
+        if (interestAmount > 0) {
+          entries.push({
+            amount: interestAmount,
+            date: toLocalDateStr(txnDate),
+            fromDate: toLocalDateStr(current),
+            toDate: toLocalDateStr(txnDate),
+            days,
+            outstanding,
+            debit: prevTxn?.type === 'debit' ? prevTxn.amount : 0,
+            credit: prevTxn?.type === 'credit' ? prevTxn.amount : 0,
+          })
+        }
       }
+      current = txnDate
     }
 
     if (txn.type === 'debit') outstanding += txn.amount
     else if (txn.type === 'credit') outstanding -= txn.amount
-    current = txnDate
     prevTxn = txn
   }
 
