@@ -58,9 +58,9 @@ export function renderReportOverlay(reportData, onClose) {
   style.textContent = `
     .report-party { margin-bottom: 16px; break-inside: avoid; }
     @media print {
-      body * { visibility: hidden !important; }
-      #report-overlay, #report-overlay * { visibility: visible !important; }
-      #report-overlay { position: fixed !important; inset: 0 !important; z-index: 9999 !important; }
+      html, body { height: auto; overflow: visible; }
+      body > *:not(#report-overlay) { display: none !important; }
+      #report-overlay { position: static !important; height: auto !important; overflow: visible !important; }
       #report-toolbar { display: none !important; }
       #report-body { max-width: none !important; padding: 10mm 8mm !important; }
       .report-columns { column-count: 2 !important; column-gap: 6mm !important; }
