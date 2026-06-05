@@ -7,7 +7,6 @@ import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
 import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
-import { showConfirm } from './components/Modal.js'
 
 registerRoute('dashboard', renderDashboard)
 registerRoute('money-sources', renderMoneySources)
@@ -18,28 +17,28 @@ registerRoute('search', renderSearch)
 registerRoute('settings', renderSettings)
 
 async function init() {
-  const locked = await isLockEnabled()
-  if (locked) {
-    await showAuthLock()
-  }
-
   let exitConfirmed = false
   history.pushState(null, '', location.href)
   window.addEventListener('popstate', () => {
     if (exitConfirmed) return
     history.pushState(null, '', location.href)
-    showConfirm({
-      title: 'Exit App?',
-      message: 'Are you sure you want to exit?',
-      confirmText: 'Exit',
-      danger: true,
-    }).then((confirmed) => {
-      if (confirmed) {
-        exitConfirmed = true
-        history.back()
-      }
-    })
+    const ok = window.confirm('Are you sure you want to exit the app?')
+    if (ok) {
+      exitConfirmed = true
+      history.back()
+    }
   })
+  window.addEventListener('beforeunload', (e) => {
+    if (!exitConfirmed) {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+  })
+
+  const locked = await isLockEnabled()
+  if (locked) {
+    await showAuthLock()
+  }
 
   initRouter()
 }
