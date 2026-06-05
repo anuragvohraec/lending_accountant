@@ -23,6 +23,7 @@ export function generateInterestReport(allTxns, parties) {
     const totalCharged = charges.reduce((s, t) => s + t.amount, 0)
     const totalPaid = payments.reduce((s, t) => s + t.amount, 0)
     const netPending = Math.round((totalCharged - totalPaid) * 100) / 100
+    if (netPending === 0) continue
     reportData.push({
       party: p,
       lastCharge,
