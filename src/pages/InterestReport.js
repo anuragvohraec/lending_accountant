@@ -12,15 +12,22 @@ export function generateInterestReport(allTxns, parties) {
     const payments = interestTxns.filter(t => t.type === 'payment')
     const lastCharge = charges[0]
     if (!lastCharge) continue
-    const paymentsAfterCharge = lastCharge ? payments.filter(t => new Date(t.date) >= new Date(lastCharge.date)) : []
-    const paymentsAfterSum = paymentsAfterCharge.reduce((s, t) => s + t.amount, 0)
+    const chargesBeforeLast = charges.slice(1)
+    const chargesBeforeSum = chargesBeforeLast.reduce((s, t) => s + t.amount, 0)
+    const lastChargeDate = lastCharge.date
+    const paymentsBeforeLast = payments.filter(t => new Date(t.date) < new Date(lastChargeDate))
+    const paymentsBeforeSum = paymentsBeforeLast.reduce((s, t) => s + t.amount, 0)
+    const previousPending = Math.round((chargesBeforeSum - paymentsBeforeSum) * 100) / 100
+    const paymentsAfter = lastCharge ? payments.filter(t => new Date(t.date) >= new Date(lastChargeDate)) : []
+    const paymentsAfterSum = paymentsAfter.reduce((s, t) => s + t.amount, 0)
     const totalCharged = charges.reduce((s, t) => s + t.amount, 0)
     const totalPaid = payments.reduce((s, t) => s + t.amount, 0)
     const netPending = Math.round((totalCharged - totalPaid) * 100) / 100
     reportData.push({
       party: p,
       lastCharge,
-      paymentsAfter: paymentsAfterCharge,
+      previousPending,
+      paymentsAfter,
       paymentsAfterSum,
       totalCharged,
       totalPaid,
@@ -79,7 +86,17 @@ function renderPartyReport(r) {
   const lc = r.lastCharge
   const breakdown = lc?.breakdown || []
   const totalDays = breakdown.reduce((s, b) => s + b.days, 0)
-  const hasPartialPayment = r.paymentsAfter.length > 0
+
+  const rows = []
+  if (r.previousPending !== 0) {
+    rows.push(`<tr class="border-b border-gray-100"><td class="py-0.5">Previous Pending</td><td class="text-right py-0.5 ${r.previousPending > 0 ? 'text-amber-600' : 'text-green-600'}">${formatCurrencyFull(r.previousPending)}</td></tr>`)
+  }
+  rows.push(`<tr class="border-b border-gray-100"><td class="py-0.5">Total charged (${formatDate(r.lastCharge.date)})</td><td class="text-right py-0.5">${formatCurrencyFull(r.lastCharge.amount)}</td></tr>`)
+  if (r.paymentsAfterSum > 0) {
+    rows.push(`<tr class="border-b border-gray-100"><td class="py-0.5">Interest paid</td><td class="text-right py-0.5 text-green-600">-${formatCurrencyFull(r.paymentsAfterSum)}</td></tr>`)
+  }
+  rows.push(`<tr class="font-semibold border-t border-gray-400"><td class="py-0.5">Net Pending</td><td class="text-right py-0.5 text-amber-600">${formatCurrencyFull(r.netPending)}</td></tr>`)
+
   return `
     <div class="report-party">
       <h3 class="text-xs font-bold mb-0.5">${r.party.name}</h3>
@@ -116,25 +133,12 @@ function renderPartyReport(r) {
         </tbody>
       </table>
       ` : '<p class="text-[10px] text-gray-400">No interest charged yet</p>'}
-      ${hasPartialPayment ? `
       <h4 class="text-[10px] font-semibold mb-0.5">Net Interest Pending</h4>
       <table class="w-full text-[10px] border-collapse mb-1">
         <tbody>
-          <tr class="border-b border-gray-100">
-            <td class="py-0.5">Total Charged</td>
-            <td class="text-right py-0.5">${formatCurrencyFull(r.totalCharged)}</td>
-          </tr>
-          <tr class="border-b border-gray-100">
-            <td class="py-0.5">Interest paid</td>
-            <td class="text-right py-0.5 text-green-600">-${formatCurrencyFull(r.paymentsAfterSum)}</td>
-          </tr>
-          <tr class="font-semibold border-t border-gray-400">
-            <td class="py-0.5">Net Pending</td>
-            <td class="text-right py-0.5 text-amber-600">${formatCurrencyFull(r.netPending)}</td>
-          </tr>
+          ${rows.join('')}
         </tbody>
       </table>
-      ` : `<p class="text-[10px] text-amber-600 mb-1">Pending: ${formatCurrencyFull(r.netPending)}</p>`}
     </div>
   `
 }
