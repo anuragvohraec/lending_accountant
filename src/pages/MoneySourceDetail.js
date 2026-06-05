@@ -359,9 +359,21 @@ function generateCSV(sourceId, from, to) {
     return true
   })
 
+  let running = opening
+  for (const e of allEntries) {
+    if (e.date >= from) break
+    const amt = e.entryType === 'principal'
+      ? (e.sourceAllocations?.find((a) => a.sourceId === _source._id)?.amount || 0)
+      : e.amount
+    running += e.type === 'credit' ? amt : -amt
+  }
+
   const header = 'Date,Party,Debit,Credit,Date,Cumulative,Tx Description'
   const rows = []
-  let running = opening
+  const txt = (s) => '"' + String(s).replace(/"/g, '""') + '"'
+  const fromDateStr = formatDate(from)
+
+  rows.push([txt(fromDateStr), txt(''), '', '', txt(fromDateStr), running, txt('Opening Balance')].join(','))
 
   for (const e of filtered) {
     let displayAmount = e.amount
@@ -378,7 +390,6 @@ function generateCSV(sourceId, from, to) {
     const dateStr = formatDate(e.date)
     const desc = e.description || ''
 
-    const txt = (s) => '"' + String(s).replace(/"/g, '""') + '"'
     rows.push([txt(dateStr), txt(party), debit, credit, txt(dateStr), cumulative, txt(desc)].join(','))
   }
 
