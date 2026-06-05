@@ -6,6 +6,7 @@ import { showModal, showConfirm, showPrompt } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
+import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 
 export async function renderPartyDetail(container, navigate, params) {
   const removeLoader = showSkeleton(container)
@@ -424,7 +425,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
       </div>
       <div>
         <label class="input-label">Date</label>
-        <input class="input" id="txn-date" type="date" value="${editTxn?.date?.split('T')[0] || new Date().toISOString().split('T')[0]}" />
+        ${dateInputHTML({id: 'txn-date', value: editTxn?.date?.split('T')[0] || new Date().toISOString().split('T')[0]})}
       </div>
       <div>
         <label class="input-label">Notes</label>
@@ -442,6 +443,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
     content,
     confirmText: isEdit ? 'Update' : 'Add',
     onMounted: () => {
+      setupDateInput('txn-date')
       const allocs = document.getElementById('source-allocs')
       if (!allocs) return
 
@@ -504,7 +506,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
         category: 'principal',
         type: document.getElementById('txn-type')?.value || 'debit',
         amount,
-        date: document.getElementById('txn-date')?.value || new Date().toISOString(),
+        date: getDateInputValue('txn-date') || new Date().toISOString(),
         tags: document.getElementById('txn-tags')?.value.trim() || '',
         notes: document.getElementById('txn-notes')?.value.trim() || '',
         sourceAllocations: sourceAllocations.length > 0 ? sourceAllocations : undefined,
@@ -539,7 +541,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
     <div class="space-y-3">
       <div>
         <label class="input-label">Calculate Interest Up To</label>
-        <input class="input" id="calc-to-date" type="date" value="${today}" />
+        ${dateInputHTML({id: 'calc-to-date', value: today})}
       </div>
       <p class="text-xs text-gray-400">Interest will be calculated from <strong>${fromDate}</strong> to the selected date.</p>
       ${!fromDate ? '<p class="text-xs text-amber-600">No starting date available.</p>' : ''}
@@ -550,8 +552,11 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
     title: 'Calculate Interest',
     content,
     confirmText: 'Calculate',
+    onMounted: () => {
+      setupDateInput('calc-to-date')
+    },
     onConfirm: () => {
-      const toDate = document.getElementById('calc-to-date')?.value
+      const toDate = getDateInputValue('calc-to-date')
       if (!toDate) { showToast('Please select a date', 'error'); return false }
 
       if (!fromDate) return false
@@ -607,7 +612,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
       </div>
       <div>
         <label class="input-label">Date</label>
-        <input class="input" id="pay-date" type="date" value="${new Date().toISOString().split('T')[0]}" />
+        ${dateInputHTML({id: 'pay-date', value: new Date().toISOString().split('T')[0]})}
       </div>
       <div>
         <label class="input-label">Notes</label>
@@ -619,16 +624,20 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
   const result = await showModal({
     title: 'Record Interest Payment',
     content,
-    confirmText: 'Save',
+    confirmText: 'Record',
+    onMounted: () => {
+      setupDateInput('pay-date')
+    },
     onConfirm: () => {
       const amount = parseFloat(document.getElementById('pay-amount')?.value)
       if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
+      const notes = document.getElementById('pay-notes')?.value.trim()
       return {
         partyId: party._id,
         category: 'interest',
         type: 'payment',
         amount,
-        date: document.getElementById('pay-date')?.value || new Date().toISOString(),
+        date: getDateInputValue('pay-date') || new Date().toISOString(),
         notes: document.getElementById('pay-notes')?.value.trim() || 'Interest payment',
         updatedAt: new Date().toISOString(),
       }

@@ -1,5 +1,6 @@
 import { getMoneySource, saveMoneySource, getAllTransactions, getSourceTransactions, saveSourceTransaction, deleteSourceTransaction, getParties } from '../db/database.js'
 import { formatCurrency, formatCurrencyPrecise, formatDate, sourceTypeIcon } from '../utils/formatters.js'
+import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -165,9 +166,9 @@ function renderLedger() {
   const filterEl = document.getElementById('ledger-filters')
   filterEl.innerHTML = `
     <div class="flex items-center gap-1.5 flex-wrap w-full">
-      <input type="date" class="input text-xs py-1 px-2 w-[130px]" id="filter-date-from" value="${_filterDateFrom}" />
+      ${dateInputHTML({id: 'filter-date-from', value: _filterDateFrom, cls: 'w-[130px]'})}
       <span class="text-xs text-gray-400">to</span>
-      <input type="date" class="input text-xs py-1 px-2 w-[130px]" id="filter-date-to" value="${_filterDateTo}" />
+      ${dateInputHTML({id: 'filter-date-to', value: _filterDateTo, cls: 'w-[130px]'})}
       <select class="input text-xs py-1 px-2 w-auto" id="filter-party">
         <option value="">All Parties</option>
         ${partiesInLedger.map((p) => `<option value="${p._id}" ${_filterParty === p._id ? 'selected' : ''}>${p.name}</option>`).join('')}
@@ -176,8 +177,11 @@ function renderLedger() {
     </div>
   `
 
-  document.getElementById('filter-date-from')?.addEventListener('change', (e) => { _filterDateFrom = e.target.value; _page = 1; renderLedger() })
-  document.getElementById('filter-date-to')?.addEventListener('change', (e) => { _filterDateTo = e.target.value; _page = 1; renderLedger() })
+  setupDateInput('filter-date-from')
+  setupDateInput('filter-date-to')
+
+  document.getElementById('filter-date-from')?.addEventListener('change', () => { _filterDateFrom = getDateInputValue('filter-date-from'); _page = 1; renderLedger() })
+  document.getElementById('filter-date-to')?.addEventListener('change', () => { _filterDateTo = getDateInputValue('filter-date-to'); _page = 1; renderLedger() })
   document.getElementById('filter-party')?.addEventListener('change', (e) => { _filterParty = e.target.value; _page = 1; renderLedger() })
   document.getElementById('clear-filters')?.addEventListener('click', () => { _filterDateFrom = ''; _filterDateTo = ''; _filterParty = ''; _page = 1; renderLedger() })
 
@@ -308,9 +312,9 @@ async function showReportForm(sourceId, navigate) {
       <div>
         <label class="input-label">Date Range</label>
         <div class="flex items-center gap-2">
-          <input type="date" class="input text-xs py-1.5 px-2 flex-1" id="rpt-from" value="${monthsAgo(3)}" />
+          ${dateInputHTML({id: 'rpt-from', value: monthsAgo(3), cls: 'flex-1'})}
           <span class="text-xs text-gray-400">to</span>
-          <input type="date" class="input text-xs py-1.5 px-2 flex-1" id="rpt-to" value="${today}" />
+          ${dateInputHTML({id: 'rpt-to', value: today, cls: 'flex-1'})}
         </div>
       </div>
       <div class="flex flex-wrap gap-1.5">
@@ -329,16 +333,18 @@ async function showReportForm(sourceId, navigate) {
     content,
     confirmText: 'Download',
     onMounted: () => {
+      setupDateInput('rpt-from')
+      setupDateInput('rpt-to')
       document.querySelectorAll('.quick-range').forEach((btn) => {
         btn.addEventListener('click', () => {
-          document.getElementById('rpt-from').value = btn.dataset.from
-          document.getElementById('rpt-to').value = btn.dataset.to
+          setDateInputValue('rpt-from', btn.dataset.from)
+          setDateInputValue('rpt-to', btn.dataset.to)
         })
       })
     },
     onConfirm: () => {
-      const from = document.getElementById('rpt-from')?.value
-      const to = document.getElementById('rpt-to')?.value
+      const from = getDateInputValue('rpt-from')
+      const to = getDateInputValue('rpt-to')
       if (!from || !to) { showToast('Please select a date range', 'error'); return false }
       return { from, to }
     },
@@ -422,7 +428,7 @@ async function showSourceTxnForm(sourceId, container, navigate) {
       </div>
       <div>
         <label class="input-label">Date *</label>
-        <input class="input" id="stxn-date" type="date" value="${new Date().toISOString().split('T')[0]}" />
+        ${dateInputHTML({id: 'stxn-date', value: new Date().toISOString().split('T')[0]})}
       </div>
       <div>
         <label class="input-label">Description *</label>
@@ -435,6 +441,9 @@ async function showSourceTxnForm(sourceId, container, navigate) {
     title: 'Add Ledger Entry',
     content,
     confirmText: 'Add',
+    onMounted: () => {
+      setupDateInput('stxn-date')
+    },
     onConfirm: () => {
       const amount = parseFloat(document.getElementById('stxn-amount')?.value)
       if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
@@ -444,7 +453,7 @@ async function showSourceTxnForm(sourceId, container, navigate) {
         sourceId,
         type: document.getElementById('stxn-type')?.value || 'credit',
         amount,
-        date: document.getElementById('stxn-date')?.value || new Date().toISOString(),
+        date: getDateInputValue('stxn-date') || new Date().toISOString(),
         description: desc,
       }
     },
