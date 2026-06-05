@@ -1,6 +1,6 @@
 {
-  "name": "Lending Accountant",
-  "short_name": "LendAcc",
+  "name": "MunimJi",
+  "short_name": "MunimJi",
   "description": "Offline-first lending & finance management PWA",
   "start_url": "/",
   "display": "standalone",
@@ -17,7 +17,5 @@
     { "src": "/icons/icon-384.svg", "sizes": "384x384", "type": "image/svg+xml" },
     { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
   ],
-  "categories": ["finance", "business"],
-  "screenshots": [],
-  "prefer_related_applications": false
+  "categories": ["finance", "business"]
 }

@@ -17,14 +17,6 @@ registerRoute('search', renderSearch)
 registerRoute('settings', renderSettings)
 
 async function init() {
-  if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    try {
-      await navigator.serviceWorker.register('/sw.js')
-    } catch (e) {
-      console.warn('SW registration failed:', e)
-    }
-  }
-
   const hasPin = await isPinSet()
   if (hasPin) {
     await showPinLock()
@@ -93,4 +85,29 @@ async function showPinLock() {
   })
 }
 
+window.serviceWorker_isInitialized = new Promise(async res=>{
+    if('serviceWorker' in navigator){
+        try{
+            let t;
+            const reg = await navigator.serviceWorker.register("/sw.js");
+            if(reg.active){
+                res(true);
+            }
+            reg.onupdatefound = (e)=>{
+                t = setInterval(()=>{
+                    if(reg.active){
+                        res(true);
+                        clearInterval(t);
+                        location.reload();
+                    }
+                },100);
+            }
+        }catch(e){
+            console.error("Recliner failed to register");
+            console.error(e);
+        }
+    }else{
+        console.log("Service worker not supported");
+    }
+});
 document.addEventListener('DOMContentLoaded', init)

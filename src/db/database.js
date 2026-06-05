@@ -1,10 +1,10 @@
-const DB_NAME = 'lending_accountant'
+const DB_NAME = 'munimji'
 
 let db
 
 export function getDb() {
   if (!db) {
-    db = new PouchDB(DB_NAME)
+    db = new window.PouchDB(DB_NAME)
   }
   return db
 }

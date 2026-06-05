@@ -3,8 +3,6 @@ import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/fo
 import { getOutstandingForParty } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
 import { showSkeleton } from '../components/Loading.js'
-import { financeIllustration, decorativeBg } from '../assets/vectors.js'
-
 let charts = {}
 
 function destroyCharts() {
@@ -13,17 +11,13 @@ function destroyCharts() {
 }
 
 export async function renderDashboard(container) {
-  renderHeader('Lending Accountant', {
+  renderHeader('MunimJi', {
     rightAction: '<button class="btn-ghost btn-icon" id="refresh-dash"><ion-icon name="refresh-outline" class="text-xl"></ion-icon></button>'
   })
 
   container.innerHTML = `
-    <div class="space-y-4 slide-up relative">
-      ${decorativeBg()}
-      <div class="relative">
-        <div class="flex items-center justify-center mb-1">${financeIllustration()}</div>
-        <div id="dash-summary" class="grid grid-cols-2 gap-3"></div>
-      </div>
+    <div class="space-y-4 slide-up">
+      <div id="dash-summary" class="grid grid-cols-2 gap-3"></div>
       <div id="dash-chart-section" class="card">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-semibold text-sm">Monthly Overview</h3>
@@ -209,7 +203,7 @@ function setupChart(allTxns, parties) {
     labels = years; debitData = debits; creditData = credits
   }
 
-  charts.main = new Chart(canvas, {
+  charts.main = new window.Chart(canvas, {
     type: 'bar',
     data: {
       labels,
