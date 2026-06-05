@@ -245,23 +245,55 @@ function renderPrincipalTransactions(txns, sources, party, container, navigate) 
 
   el.innerHTML = sorted.map((t) => {
     runningBalance += t.type === 'debit' ? t.amount : -t.amount
-    const sourceNames = t.sourceAllocations?.map((a) => sources.find((s) => s._id === a.sourceId)?.name || 'Unknown').join(', ') || ''
+    const allocs = t.sourceAllocations || []
+    const sourceNames = allocs.map((a) => sources.find((s) => s._id === a.sourceId)?.name || 'Unknown').join(', ')
+    const rowId = 'src-' + (t._id || Math.random().toString(36).slice(2))
     return `
-      <div class="flex items-start justify-between py-3 border-b border-gray-50 last:border-0">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full ${t.type === 'debit' ? 'bg-red-400' : 'bg-green-400'} shrink-0"></span>
-            <span class="text-sm font-medium">${t.type === 'debit' ? 'Given' : 'Returned'}</span>
-            ${t.tags ? t.tags.split(',').map((tag) => `<span class="badge-gray text-[10px]">${tag.trim()}</span>`).join('') : ''}
+      <div class="py-3 border-b border-gray-50 last:border-0">
+        <div class="flex items-start justify-between">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full ${t.type === 'debit' ? 'bg-red-400' : 'bg-green-400'} shrink-0"></span>
+              <span class="text-sm font-medium">${t.type === 'debit' ? 'Given' : 'Returned'}</span>
+              ${t.tags ? t.tags.split(',').map((tag) => `<span class="badge-gray text-[10px]">${tag.trim()}</span>`).join('') : ''}
+            </div>
+            <div class="text-xs text-gray-400 mt-0.5">${formatDateTime(t.date)}</div>
+            ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5 truncate">${t.notes}</div>` : ''}
+            ${sourceNames ? `<div class="text-xs text-gray-400 mt-0.5">${t.type === 'debit' ? 'From' : 'To'}: ${sourceNames}</div>` : ''}
+            ${allocs.length > 0 ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View breakdown &rsaquo;</button>` : ''}
           </div>
-          <div class="text-xs text-gray-400 mt-0.5">${formatDateTime(t.date)}</div>
-          ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5 truncate">${t.notes}</div>` : ''}
-          ${sourceNames ? `<div class="text-xs text-gray-400 mt-0.5">From: ${sourceNames}</div>` : ''}
+          <div class="text-right ml-3">
+            <div class="${t.type === 'debit' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'debit' ? '-' : '+'}${formatCurrencyFull(t.amount)}</div>
+            <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+          </div>
         </div>
-        <div class="text-right ml-3">
-          <div class="${t.type === 'debit' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'debit' ? '-' : '+'}${formatCurrencyFull(t.amount)}</div>
-          <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+        ${allocs.length > 0 ? `
+        <div id="${rowId}" class="hidden mt-3 overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="text-gray-400 border-b border-gray-100">
+                <th class="text-left pb-1.5 font-medium">Source</th>
+                <th class="text-right pb-1.5 font-medium">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${allocs.map((a) => {
+                const src = sources.find((s) => s._id === a.sourceId)
+                return `
+                  <tr class="border-b border-gray-50">
+                    <td class="text-left py-1.5 text-gray-600">${src?.name || 'Unknown'}</td>
+                    <td class="text-right py-1.5 font-mono">${formatCurrencyFull(a.amount)}</td>
+                  </tr>
+                `
+              }).join('')}
+              <tr class="font-semibold border-t border-gray-200">
+                <td class="text-left py-1.5 text-gray-500">Total</td>
+                <td class="text-right py-1.5 font-mono">${formatCurrencyFull(t.amount)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+        ` : ''}
       </div>
     `
   }).join('')
@@ -372,31 +404,30 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
 
   const content = `
     <div class="space-y-3">
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="input-label">Type *</label>
-          <select class="input" id="txn-type">
-            <option value="debit" ${editTxn?.type === 'debit' ? 'selected' : ''}>Debit (Give)</option>
-            <option value="credit" ${editTxn?.type === 'credit' ? 'selected' : ''}>Credit (Return)</option>
-          </select>
-        </div>
-        <div>
-          <label class="input-label">Amount *</label>
-          <input class="input" id="txn-amount" type="number" step="0.01" value="${editTxn?.amount || ''}" placeholder="0.00" />
-        </div>
-      </div>
       <div>
-        <label class="input-label">Date & Time</label>
-        <input class="input" id="txn-date" type="date" value="${editTxn?.date?.split('T')[0] || new Date().toISOString().split('T')[0]}" />
+        <label class="input-label">Type *</label>
+        <select class="input" id="txn-type">
+          <option value="debit" ${editTxn?.type === 'debit' ? 'selected' : ''}>Debit (Give)</option>
+          <option value="credit" ${editTxn?.type === 'credit' ? 'selected' : ''}>Credit (Return)</option>
+        </select>
       </div>
       ${sourceAllocHtml}
       <div>
-        <label class="input-label">Tags (comma separated)</label>
-        <input class="input" id="txn-tags" value="${editTxn?.tags || ''}" placeholder="e.g. urgent, monthly" />
+        <label class="input-label">Amount *</label>
+        <input class="input" id="txn-amount" type="number" step="0.01" value="${editTxn?.amount || ''}" placeholder="0.00" ${activeSources.length > 0 ? 'readonly' : ''} />
+        <p class="text-xs text-gray-400 mt-1" id="amount-hint">${activeSources.length > 0 ? 'Auto-calculated from source allocation sums. Edit manually to override and clear allocations.' : ''}</p>
+      </div>
+      <div>
+        <label class="input-label">Date</label>
+        <input class="input" id="txn-date" type="date" value="${editTxn?.date?.split('T')[0] || new Date().toISOString().split('T')[0]}" />
       </div>
       <div>
         <label class="input-label">Notes</label>
         <textarea class="input" id="txn-notes" rows="2" placeholder="Transaction notes">${editTxn?.notes || ''}</textarea>
+      </div>
+      <div>
+        <label class="input-label">Tags (comma separated)</label>
+        <input class="input" id="txn-tags" value="${editTxn?.tags || ''}" placeholder="e.g. urgent, monthly" />
       </div>
     </div>
   `
@@ -406,11 +437,50 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
     content,
     confirmText: isEdit ? 'Update' : 'Add',
     onMounted: () => {
-      document.getElementById('source-allocs')?.addEventListener('change', (e) => {
+      const allocs = document.getElementById('source-allocs')
+      if (!allocs) return
+
+      function updateAmountFromAllocs() {
+        let sum = 0
+        document.querySelectorAll('.alloc-amount:not([disabled])').forEach((inp) => {
+          sum += parseFloat(inp.value) || 0
+        })
+        const amountInput = document.getElementById('txn-amount')
+        if (amountInput) amountInput.value = sum > 0 ? sum.toFixed(2) : ''
+      }
+
+      function enableAutoAmount() {
+        const a = document.getElementById('txn-amount')
+        if (a && !a.hasAttribute('readonly')) {
+          a.setAttribute('readonly', '')
+        }
+        updateAmountFromAllocs()
+      }
+
+      allocs.addEventListener('input', (e) => {
+        if (e.target.classList.contains('alloc-amount')) enableAutoAmount()
+      })
+
+      allocs.addEventListener('change', (e) => {
         if (e.target.classList.contains('src-check')) {
           const input = document.querySelector(`.alloc-amount[data-id="${e.target.dataset.id}"]`)
-          if (input) input.disabled = !e.target.checked
+          if (input) {
+            input.disabled = !e.target.checked
+            if (!e.target.checked) input.value = ''
+          }
+          enableAutoAmount()
         }
+      })
+
+      document.getElementById('txn-amount')?.addEventListener('focus', function () {
+        if (!this.hasAttribute('readonly')) return
+        this.removeAttribute('readonly')
+        document.querySelectorAll('.src-check:checked').forEach((cb) => {
+          cb.checked = false
+          const inp = document.querySelector(`.alloc-amount[data-id="${cb.dataset.id}"]`)
+          if (inp) { inp.disabled = true; inp.value = '' }
+        })
+        document.getElementById('amount-hint')?.classList.add('hidden')
       })
     },
     onConfirm: () => {
