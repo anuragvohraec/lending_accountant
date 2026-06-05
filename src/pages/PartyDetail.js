@@ -127,7 +127,7 @@ export async function renderPartyDetail(container, navigate, params) {
   if (party.interestRate > 0) renderInterestSummary(allTxns, party)
   renderSourceOutstanding(allTxns, sources)
   renderCollateralList(collaterals, party, allTxns, sources, container, navigate)
-  renderPrincipalTransactions(principalTxns, sources, party, container, navigate)
+  renderPrincipalTransactions(principalTxns, sources, party, allTxns, container, navigate)
   renderInterestTransactions(interestTxns, sources, party, container, navigate)
 
   document.getElementById('add-collateral-btn')?.addEventListener('click', () => showCollateralForm(null, party._id, collaterals, party, allTxns, sources, container, navigate))
@@ -239,7 +239,7 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
   })
 }
 
-function renderPrincipalTransactions(txns, sources, party, container, navigate) {
+function renderPrincipalTransactions(txns, sources, party, allTxns, container, navigate) {
   const el = document.getElementById('principal-txn-list')
   if (txns.length === 0) {
     el.innerHTML = '<div class="empty-state"><ion-icon name="receipt-outline"></ion-icon><p class="text-xs text-gray-400">No principal transactions yet</p></div>'
@@ -269,8 +269,15 @@ function renderPrincipalTransactions(txns, sources, party, container, navigate) 
             ${allocs.length > 0 ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View breakdown &rsaquo;</button>` : ''}
           </div>
           <div class="text-right ml-3">
-            <div class="${t.type === 'debit' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'debit' ? '-' : '+'}${formatCurrencyFull(t.amount)}</div>
-            <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="text-gray-300 hover:text-primary edit-principal-txn" data-id="${t._id}" title="Edit">
+                <ion-icon name="create-outline" class="text-base"></ion-icon>
+              </button>
+              <div>
+                <div class="${t.type === 'debit' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'debit' ? '-' : '+'}${formatCurrencyFull(t.amount)}</div>
+                <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
+              </div>
+            </div>
           </div>
         </div>
         ${allocs.length > 0 ? `
@@ -303,6 +310,13 @@ function renderPrincipalTransactions(txns, sources, party, container, navigate) 
       </div>
     `
   }).join('')
+
+  el.querySelectorAll('.edit-principal-txn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const txn = allTxns.find((t) => t._id === btn.dataset.id)
+      if (txn) showTransactionForm(txn, party, sources, allTxns, container, navigate)
+    })
+  })
 }
 
 function renderInterestTransactions(txns, sources, party, container, navigate) {
@@ -397,13 +411,19 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
     <div>
       <label class="input-label">Money Source Allocation</label>
       <div class="space-y-2" id="source-allocs">
-        ${activeSources.map((s, i) => `
-          <div class="flex items-center gap-2">
-            <input type="checkbox" id="alloc-src-${s._id}" class="rounded border-gray-300 text-primary focus:ring-primary src-check" data-id="${s._id}" ${i === 0 ? 'checked' : ''} />
-            <label for="alloc-src-${s._id}" class="text-sm flex-1">${s.name}</label>
-            <input type="number" step="0.01" class="input w-28 text-sm alloc-amount" data-id="${s._id}" placeholder="Amount" ${i === 0 ? '' : 'disabled'} />
-          </div>
-        `).join('')}
+        ${activeSources.map((s) => {
+          const alloc = editTxn?.sourceAllocations?.find((a) => a.sourceId === s._id)
+          const checked = alloc ? 'checked' : (!editTxn && s === activeSources[0] ? 'checked' : '')
+          const amount = alloc ? alloc.amount : ''
+          const disabled = alloc ? '' : (!editTxn && s === activeSources[0] ? '' : 'disabled')
+          return `
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="alloc-src-${s._id}" class="rounded border-gray-300 text-primary focus:ring-primary src-check" data-id="${s._id}" ${checked} />
+              <label for="alloc-src-${s._id}" class="text-sm flex-1">${s.name}</label>
+              <input type="number" step="0.01" class="input w-28 text-sm alloc-amount" data-id="${s._id}" placeholder="Amount" value="${amount}" ${disabled} />
+            </div>
+          `
+        }).join('')}
       </div>
     </div>
   ` : ''
@@ -517,7 +537,23 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
 
   if (!result || result === true) return
 
-  if (isEdit) result._id = editTxn._id
+  if (isEdit) {
+    result._id = editTxn._id
+    const interestCharges = allTxns.filter((t) => t.category === 'interest' && t.type === 'charge' && t.partyId === party._id)
+    if (interestCharges.length > 0) {
+      const confirmed = await showConfirm({
+        title: 'Interest May Be Affected',
+        message: `Editing this transaction may affect ${interestCharges.length} existing interest charge(s). They will be removed and you will need to recalculate interest later. Continue?`,
+        confirmText: 'Edit & Remove Charges',
+        danger: true,
+      })
+      if (!confirmed) return
+      for (const charge of interestCharges) {
+        await deleteTransaction(charge._id)
+      }
+      logAction('delete', 'transaction', party._id, `Deleted ${interestCharges.length} interest charges due to principal transaction edit`)
+    }
+  }
 
   await saveTransaction(result)
   logAction(isEdit ? 'update' : 'create', 'transaction', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${result.type} principal transaction of ${result.amount}`)
