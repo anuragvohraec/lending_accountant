@@ -1,16 +1,22 @@
+function roundToRupee(n) {
+  return Math.round(Number(n))
+}
+
 export function formatCurrency(n) {
   if (n == null || isNaN(n)) return '₹0'
-  const num = Number(n)
+  const num = roundToRupee(n)
   const sign = num < 0 ? '-' : ''
   const abs = Math.abs(num)
-  if (abs >= 10000000) return sign + '₹' + (abs / 10000000).toFixed(2) + 'Cr'
-  if (abs >= 100000) return sign + '₹' + (abs / 100000).toFixed(2) + 'L'
-  return sign + '₹' + abs.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+  if (abs >= 10000000) return sign + '₹' + (abs / 10000000).toFixed(1) + 'Cr'
+  if (abs >= 100000) return sign + '₹' + (abs / 100000).toFixed(1) + 'L'
+  return sign + '₹' + abs.toLocaleString('en-IN')
 }
 
 export function formatCurrencyFull(n) {
-  if (n == null || isNaN(n)) return '₹0.00'
-  return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+  if (n == null || isNaN(n)) return '₹0'
+  const num = roundToRupee(n)
+  const sign = num < 0 ? '-' : ''
+  return sign + '₹' + Math.abs(num).toLocaleString('en-IN')
 }
 
 function toDDMMYY(d) {
