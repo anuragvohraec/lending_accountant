@@ -62,12 +62,13 @@ export async function renderMoneySourceDetail(container, navigate, params) {
       <div class="flex items-center justify-between">
         <h3 class="font-bold text-sm">Ledger</h3>
         <div class="flex gap-2">
+          <button class="btn-secondary text-xs py-1.5 px-3" id="filter-ledger"><ion-icon name="funnel-outline" class="text-sm mr-1"></ion-icon>Filter</button>
           <button class="btn-secondary text-xs py-1.5 px-3" id="report-ledger"><ion-icon name="download-outline" class="text-sm mr-1"></ion-icon>Report</button>
           <button class="btn-primary text-xs py-1.5 px-3" id="add-ledger-entry"><ion-icon name="add-outline" class="text-sm mr-1"></ion-icon>Add Entry</button>
         </div>
       </div>
 
-      <div id="ledger-filters" class="flex flex-wrap gap-2"></div>
+      <div id="ledger-filters" class="flex flex-wrap gap-2 hidden"></div>
 
       <div id="ledger-controls" class="flex items-center justify-between"></div>
 
@@ -77,6 +78,12 @@ export async function renderMoneySourceDetail(container, navigate, params) {
 
   document.getElementById('add-ledger-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate))
   document.getElementById('report-ledger').addEventListener('click', () => showReportForm(source._id, navigate))
+  document.getElementById('filter-ledger').addEventListener('click', () => {
+    document.getElementById('ledger-filters').classList.toggle('hidden')
+    if (!document.getElementById('ledger-filters').classList.contains('hidden')) {
+      renderLedger()
+    }
+  })
   document.getElementById('balance-stat').addEventListener('click', showPreciseBalance)
 
   renderLedger()
@@ -218,25 +225,19 @@ function renderLedger() {
 
   let html = openingRow
 
-  if (pageEntries.length > 0) {
-    const firstEntry = pageEntries[0]
-    const indexInFull = filtered.indexOf(firstEntry)
-    for (let i = 0; i <= indexInFull - 1; i++) {
-      const e = filtered[i]
-      running += e.type === 'credit' ? e.amount : -e.amount
-    }
-  }
+  const filteredSet = new Set(filtered)
 
-  html += pageEntries.map((e) => {
+  for (const e of entries) {
     let displayAmount = e.amount
     if (e.entryType === 'principal') {
       displayAmount = e.sourceAllocations?.find((a) => a.sourceId === _source._id)?.amount || 0
     }
     running += e.type === 'credit' ? displayAmount : -displayAmount
-
+    if (!filteredSet.has(e)) continue
+    if (pageEntries.indexOf(e) === -1) continue
     const isSourceEntry = e.entryType === 'source'
 
-    return `
+    html += `
       <div class="flex items-start justify-between py-2.5 border-b border-gray-50 last:border-0">
         <div class="flex-1 min-w-0">
           <div class="text-xs text-gray-400">${formatDate(e.date)}</div>
@@ -255,7 +256,7 @@ function renderLedger() {
         </div>
       </div>
     `
-  }).join('')
+  }
 
   el.innerHTML = html
 
