@@ -363,9 +363,6 @@ function generateCSV(sourceId, from, to) {
   const rows = []
   let running = opening
 
-  const fromDate = from ? new Date(from) : null
-  const toDate = to ? new Date(to) : null
-
   for (const e of filtered) {
     let displayAmount = e.amount
     if (e.entryType === 'principal') {
@@ -375,14 +372,14 @@ function generateCSV(sourceId, from, to) {
     running += e.type === 'credit' ? displayAmount : -displayAmount
 
     const party = e.entryType === 'principal' ? (_allParties.find((p) => p._id === e.partyId)?.name || '') : ''
-    const debit = e.type === 'debit' ? formatCurrencyPrecise(displayAmount) : ''
-    const credit = e.type === 'credit' ? formatCurrencyPrecise(displayAmount) : ''
-    const cumulative = formatCurrencyPrecise(running)
+    const debit = e.type === 'debit' ? displayAmount : ''
+    const credit = e.type === 'credit' ? displayAmount : ''
+    const cumulative = running
     const dateStr = formatDate(e.date)
     const desc = e.description || ''
 
-    const esc = (s) => '"' + String(s).replace(/"/g, '""') + '"'
-    rows.push([esc(dateStr), esc(party), esc(debit), esc(credit), esc(dateStr), esc(cumulative), esc(desc)].join(','))
+    const txt = (s) => '"' + String(s).replace(/"/g, '""') + '"'
+    rows.push([txt(dateStr), txt(party), debit, credit, txt(dateStr), cumulative, txt(desc)].join(','))
   }
 
   const csv = '\uFEFF' + header + '\n' + rows.join('\n')
