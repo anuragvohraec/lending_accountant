@@ -1,6 +1,6 @@
 import { getParties, saveParty, deleteParty, getAllTransactions } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, accountStatusColor, formatDate } from '../utils/formatters.js'
-import { getOutstandingForParty } from '../services/interest.js'
+import { getOutstandingForParty, getInterestPending } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -54,6 +54,7 @@ export async function renderParties(container, navigate) {
     el.innerHTML = filtered.map((p) => {
       const txns = allTxns.filter((t) => t.partyId === p._id)
       const outstanding = getOutstandingForParty(txns)
+      const pendingInterest = p.interestRate ? getInterestPending(txns) : 0
       const statusClass = accountStatusColor(p.status)
       return `
         <div class="card-flat party-card cursor-pointer active:scale-[0.98] transition-transform" data-id="${p._id}">
@@ -72,6 +73,7 @@ export async function renderParties(container, navigate) {
             <div class="text-right">
               <div class="${outstanding > 0 ? 'amount-negative' : 'amount-neutral'}">${formatCurrencyFull(Math.abs(outstanding))}</div>
               <div class="text-xs text-gray-400">${outstanding > 0 ? 'Due' : 'Cleared'}</div>
+              ${pendingInterest > 0 ? `<div class="text-xs text-amber-600 mt-0.5">+${formatCurrencyFull(pendingInterest)} int.</div>` : ''}
             </div>
           </div>
         </div>
