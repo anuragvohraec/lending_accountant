@@ -1,5 +1,5 @@
 import { getMoneySource, saveMoneySource, getAllTransactions, getSourceTransactions, saveSourceTransaction, deleteSourceTransaction, getParties } from '../db/database.js'
-import { formatCurrencyPrecise, formatDate, sourceTypeIcon } from '../utils/formatters.js'
+import { formatCurrency, formatCurrencyPrecise, formatDate, sourceTypeIcon } from '../utils/formatters.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -44,17 +44,17 @@ export async function renderMoneySourceDetail(container, navigate, params) {
           </div>
         </div>
         <div class="grid grid-cols-3 gap-3">
-          <div>
+          <div id="balance-stat" class="cursor-pointer active:scale-95 transition-transform">
             <div class="stat-label">Balance</div>
-            <div class="stat-value text-primary break-all">${formatCurrencyPrecise(balance)}</div>
+            <div class="stat-value text-primary">${formatCurrency(balance)}</div>
           </div>
           <div>
             <div class="stat-label">Lent Out</div>
-            <div class="stat-value text-amber-600 break-all">${formatCurrencyPrecise(lentOut)}</div>
+            <div class="stat-value text-amber-600">${formatCurrency(lentOut)}</div>
           </div>
           <div>
             <div class="stat-label">Repaid</div>
-            <div class="stat-value text-green-600 break-all">${formatCurrencyPrecise(repaidToSource)}</div>
+            <div class="stat-value text-green-600">${formatCurrency(repaidToSource)}</div>
           </div>
         </div>
       </div>
@@ -77,8 +77,22 @@ export async function renderMoneySourceDetail(container, navigate, params) {
 
   document.getElementById('add-ledger-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate))
   document.getElementById('report-ledger').addEventListener('click', () => showReportForm(source._id, navigate))
+  document.getElementById('balance-stat').addEventListener('click', showPreciseBalance)
 
   renderLedger()
+}
+
+function showPreciseBalance() {
+  const existing = document.getElementById('precise-balance-toast')
+  if (existing) existing.remove()
+  const { balance } = getDerived()
+  const el = document.createElement('div')
+  el.id = 'precise-balance-toast'
+  el.className = 'card-flat bg-gradient-to-r from-primary/5 to-vibgyor-violet/5 animate-fade-in'
+  el.innerHTML = `<div class="flex items-center justify-between"><span class="text-sm text-gray-500 font-medium">Net Balance</span><span class="font-mono text-lg font-bold text-primary">${formatCurrencyPrecise(balance)}</span></div>`
+  const summary = document.querySelector('.card-flat')
+  summary.parentNode.insertBefore(el, summary.nextSibling)
+  setTimeout(() => { const e = document.getElementById('precise-balance-toast'); if (e) e.remove() }, 7000)
 }
 
 function getDerived() {
