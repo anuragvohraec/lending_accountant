@@ -89,7 +89,7 @@ window.serviceWorker_isInitialized = new Promise(async res=>{
     if('serviceWorker' in navigator){
         try{
             let t;
-            const reg = await navigator.serviceWorker.register("/sw.js");
+            const reg = await navigator.serviceWorker.register("sw.js");
             if(reg.active){
                 res(true);
             }

@@ -1,4 +1,6 @@
 node_modules/
 dist/
+archive/
 .DS_Store
 *.local
+package-lock.json
