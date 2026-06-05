@@ -1,4 +1,4 @@
-import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral } from '../db/database.js'
+import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
 import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getPartnerWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
@@ -12,6 +12,11 @@ export async function renderPartyDetail(container, navigate, params) {
   const [party, sources, allTxns, collaterals] = await Promise.all([
     getParty(params.id), getMoneySources(), getTransactions(params.id), getCollaterals(params.id),
   ])
+  for (const c of collaterals) {
+    if (c._attachments?.image && !c.image) {
+      c.image = await getCollateralImageDataUrl(c._id)
+    }
+  }
   removeLoader()
 
   if (!party) {
@@ -641,6 +646,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
 async function showCollateralForm(editCollateral, partyId, collaterals, party, allTxns, sources, container, navigate) {
   const isEdit = !!editCollateral
   let imageData = editCollateral?.image || ''
+  let selectedFile = null
 
   const content = `
     <div class="space-y-3">
@@ -703,6 +709,7 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
       document.getElementById('col-image')?.addEventListener('change', (e) => {
         const file = e.target.files[0]
         if (!file) return
+        selectedFile = file
         const reader = new FileReader()
         reader.onload = (ev) => {
           imageData = ev.target.result
@@ -729,7 +736,7 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
         notes: document.getElementById('col-notes')?.value.trim() || '',
         lastUpdated: new Date().toISOString(),
       }
-      if (imageData) result.image = imageData
+      if (selectedFile) result._imageFile = selectedFile
       if (isEdit) result._id = editCollateral._id
       return result
     },

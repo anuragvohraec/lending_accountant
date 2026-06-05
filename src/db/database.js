@@ -105,19 +105,64 @@ export async function getCollaterals(partyId) {
 
 export async function saveCollateral(data) {
   const db = getDb()
+  const imageFile = data._imageFile
+  delete data._imageFile
+  delete data.image
+
+  let result, existing
   if (data._id) {
-    const existing = await db.get(data._id)
-    return db.put({ ...existing, ...data })
+    existing = await db.get(data._id)
+    delete existing.image
+    result = await db.put({ ...existing, ...data })
+  } else {
+    data._id = 'collateral_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    data.dateAdded = new Date().toISOString()
+    result = await db.put(data)
   }
-  data._id = 'collateral_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-  data.dateAdded = new Date().toISOString()
-  return db.put(data)
+
+  if (imageFile) {
+    await db.putAttachment(result.id, 'image', result.rev, imageFile, imageFile.type)
+  } else if (existing?.image) {
+    const mime = existing.image.split(';')[0].split(':')[1] || 'image/jpeg'
+    const raw = existing.image.split(',')[1]
+    await db.putAttachment(result.id, 'image', result.rev, raw, mime)
+  }
+
+  return result
 }
 
 export async function deleteCollateral(id) {
   const db = getDb()
   const doc = await db.get(id)
+  if (doc._attachments?.image) {
+    const { rev } = await db.removeAttachment(id, 'image', doc._rev)
+    return db.remove({ _id: id, _rev: rev })
+  }
   return db.remove(doc)
+}
+
+export async function getCollateralImageDataUrl(id) {
+  const db = getDb()
+  try {
+    const blob = await db.getAttachment(id, 'image')
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve(e.target.result)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+export async function getCollateralsWithAttachments() {
+  const result = await getDb().allDocs({
+    startkey: 'collateral_',
+    endkey: 'collateral_\uffff',
+    include_docs: true,
+    attachments: true,
+  })
+  return result.rows.map((r) => r.doc).filter((d) => !d._deleted).sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded))
 }
 
 export async function getSourceTransactions(sourceId) {
@@ -189,7 +234,7 @@ export async function getAllData() {
     getMoneySources(),
     getParties(),
     getAllTransactions(),
-    getCollaterals(),
+    getCollateralsWithAttachments(),
     getAuditLogs(9999),
   ])
   return { sources, parties, transactions: txns, collaterals, auditLogs, exportedAt: new Date().toISOString() }
