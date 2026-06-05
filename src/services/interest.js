@@ -80,44 +80,82 @@ export function calculateMonthlyCharges({ transactions, rate, fromDate, toDate }
     .filter((t) => isPrincipal(t))
     .sort((a, b) => new Date(a.date) - new Date(b.date))
 
-  let current = new Date(start)
-  const dayBefore = new Date(current)
+  const dayBefore = new Date(start)
   dayBefore.setDate(dayBefore.getDate() - 1)
   let outstanding = getOutstandingForParty(transactions, toLocalDateStr(dayBefore))
-  let prevTxn = null
 
+  // Group same-date transactions
+  const groups = []
   for (const txn of sorted) {
     const txnDate = new Date(txn.date)
-    if (txnDate < current) continue
     if (txnDate >= end) break
+    if (txnDate < start) continue
+    const last = groups[groups.length - 1]
+    if (last && last.date.getTime() === txnDate.getTime()) {
+      last.txns.push(txn)
+      if (txn.type === 'debit') last.debit += txn.amount
+      else if (txn.type === 'credit') last.credit += txn.amount
+    } else {
+      groups.push({
+        date: txnDate,
+        txns: [txn],
+        debit: txn.type === 'debit' ? txn.amount : 0,
+        credit: txn.type === 'credit' ? txn.amount : 0,
+      })
+    }
+  }
 
-    if (txnDate > current) {
-      const days = Math.floor((txnDate - current) / 86400000)
-      if (days > 0 && outstanding > 0) {
+  // Handle initial gap (start to first group) where pre-existing outstanding accrues
+  if (groups.length > 0 && groups[0].date > start) {
+    const gapDays = Math.floor((groups[0].date - start) / 86400000)
+    if (gapDays > 0 && outstanding > 0) {
+      const interestAmount = Math.round(outstanding * rate * gapDays / 3000 * 100) / 100
+      if (interestAmount > 0) {
+        entries.push({
+          amount: interestAmount,
+          date: toLocalDateStr(start),
+          fromDate: toLocalDateStr(start),
+          toDate: toLocalDateStr(groups[0].date),
+          days: gapDays,
+          outstanding,
+          debit: 0,
+          credit: 0,
+        })
+      }
+    }
+  }
+
+  // One entry per transaction group — each shows the group's date, combined debit/credit,
+  // outstanding after applying it, and the interest it generates until the next event
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i]
+    outstanding += group.debit - group.credit
+
+    const nextDate = i < groups.length - 1 ? groups[i + 1].date : end
+    if (nextDate > group.date && outstanding > 0) {
+      const rawDays = Math.floor((nextDate - group.date) / 86400000)
+      const days = (nextDate >= end) ? rawDays + 1 : rawDays
+      if (days > 0) {
         const interestAmount = Math.round(outstanding * rate * days / 3000 * 100) / 100
         if (interestAmount > 0) {
           entries.push({
             amount: interestAmount,
-            date: toLocalDateStr(txnDate),
-            fromDate: toLocalDateStr(current),
-            toDate: toLocalDateStr(txnDate),
+            date: toLocalDateStr(group.date),
+            fromDate: toLocalDateStr(group.date),
+            toDate: toLocalDateStr(nextDate >= end ? end : nextDate),
             days,
             outstanding,
-            debit: prevTxn?.type === 'debit' ? prevTxn.amount : 0,
-            credit: prevTxn?.type === 'credit' ? prevTxn.amount : 0,
+            debit: group.debit,
+            credit: group.credit,
           })
         }
       }
-      current = txnDate
     }
-
-    if (txn.type === 'debit') outstanding += txn.amount
-    else if (txn.type === 'credit') outstanding -= txn.amount
-    prevTxn = txn
   }
 
-  if (current < end && outstanding > 0) {
-    const rawDays = Math.floor((end - current) / 86400000)
+  // No groups but pre-existing outstanding — full-period entry
+  if (groups.length === 0 && outstanding > 0) {
+    const rawDays = Math.floor((end - start) / 86400000)
     const days = rawDays + 1
     if (days > 0) {
       const interestAmount = Math.round(outstanding * rate * days / 3000 * 100) / 100
@@ -125,12 +163,12 @@ export function calculateMonthlyCharges({ transactions, rate, fromDate, toDate }
         entries.push({
           amount: interestAmount,
           date: toLocalDateStr(end),
-          fromDate: toLocalDateStr(current),
+          fromDate: toLocalDateStr(start),
           toDate: toLocalDateStr(end),
           days,
           outstanding,
-          debit: prevTxn?.type === 'debit' ? prevTxn.amount : 0,
-          credit: prevTxn?.type === 'credit' ? prevTxn.amount : 0,
+          debit: 0,
+          credit: 0,
         })
       }
     }
