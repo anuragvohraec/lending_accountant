@@ -87,7 +87,11 @@ export function calculateMonthlyCharges({ transactions, rate, fromDate, toDate }
   for (const txn of sorted) {
     const txnDate = new Date(txn.date)
     if (txnDate <= current) {
-      if (txnDate.getTime() === current.getTime()) prevTxn = txn
+      if (txnDate.getTime() === current.getTime()) {
+        prevTxn = txn
+        if (txn.type === 'debit') outstanding += txn.amount
+        else if (txn.type === 'credit') outstanding -= txn.amount
+      }
       continue
     }
     if (txnDate >= end) break
