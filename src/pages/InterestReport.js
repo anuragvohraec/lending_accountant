@@ -44,7 +44,7 @@ export function renderReportOverlay(reportData, onClose) {
     </div>
     <div id="report-body" class="px-4 py-4 max-w-4xl mx-auto">
       <div class="report-columns font-mono">
-        ${reportData.map(r => renderPartyReport(r)).join('')}
+        ${reportData.map((r, i) => `${i > 0 ? '<hr class="border-gray-300 my-3">' : ''}${renderPartyReport(r)}`).join('')}
       </div>
     </div>
   `
