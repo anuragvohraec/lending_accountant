@@ -1,6 +1,7 @@
 import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
 import { getOutstandingForParty, getPendingInterestByParty } from '../services/interest.js'
+import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
 import { renderHeader } from '../components/Header.js'
 import { showSkeleton } from '../components/Loading.js'
 let charts = {}
@@ -19,7 +20,10 @@ export async function renderDashboard(container) {
     <div class="space-y-4 slide-up">
       <div id="dash-summary" class="grid grid-cols-2 gap-3"></div>
       <div id="dash-pending-collections" class="card">
-        <h3 class="font-semibold text-sm mb-3">Pending Interest Collections</h3>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-sm">Pending Interest Collections</h3>
+          <button class="btn-ghost btn-icon text-primary" id="report-btn" title="Generate Report"><ion-icon name="document-text-outline" class="text-lg"></ion-icon></button>
+        </div>
         <div id="dash-pending-list"></div>
       </div>
       <div id="dash-chart-section" class="card">
@@ -186,6 +190,11 @@ export async function renderDashboard(container) {
       btn.classList.remove('text-gray-500')
       setupChart(allTxns, parties)
     })
+  })
+
+  document.getElementById('report-btn')?.addEventListener('click', () => {
+    const data = generateInterestReport(allTxns, activeParties)
+    renderReportOverlay(data)
   })
 }
 
