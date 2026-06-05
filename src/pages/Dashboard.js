@@ -1,6 +1,6 @@
 import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
-import { getOutstandingForParty } from '../services/interest.js'
+import { getOutstandingForParty, getPendingInterestByParty } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
 import { showSkeleton } from '../components/Loading.js'
 let charts = {}
@@ -18,6 +18,10 @@ export async function renderDashboard(container) {
   container.innerHTML = `
     <div class="space-y-4 slide-up">
       <div id="dash-summary" class="grid grid-cols-2 gap-3"></div>
+      <div id="dash-pending-collections" class="card">
+        <h3 class="font-semibold text-sm mb-3">Pending Interest Collections</h3>
+        <div id="dash-pending-list"></div>
+      </div>
       <div id="dash-chart-section" class="card">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-semibold text-sm">Monthly Overview</h3>
@@ -85,6 +89,27 @@ export async function renderDashboard(container) {
     const lastTxn = partyTxns.sort((a, b) => new Date(b.date) - new Date(a.date))[0]
     return getOutstandingForParty(partyTxns) > 0 && (new Date() - new Date(lastTxn.date)) > 30 * 86400000
   })
+
+  const pendingInterest = getPendingInterestByParty(allTxns, activeParties)
+  const pendingEl = document.getElementById('dash-pending-list')
+  if (pendingInterest.length === 0) {
+    document.getElementById('dash-pending-collections')?.classList.add('hidden')
+  } else {
+    pendingEl.innerHTML = pendingInterest.map((pc) => `
+      <div class="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+          <div class="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+            <ion-icon name="trending-up-outline" class="text-sm"></ion-icon>
+          </div>
+          <div class="min-w-0">
+            <div class="text-sm font-medium truncate">${pc.party.name}</div>
+            <div class="text-xs text-gray-400">${pc.charges} pending charge${pc.charges !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+        <div class="font-mono font-semibold text-sm text-amber-600 ml-3">${formatCurrencyFull(pc.amount)}</div>
+      </div>
+    `).join('')
+  }
 
   const summaryCards = [
     { label: 'Total Lent', value: formatCurrency(totalLent), color: 'text-vibgyor-indigo', icon: 'arrow-up-outline' },

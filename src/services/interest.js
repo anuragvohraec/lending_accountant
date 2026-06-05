@@ -138,6 +138,22 @@ export function calculateMonthlyCharges({ transactions, rate, fromDate, toDate }
   return entries
 }
 
+export function getPendingInterestByParty(allTxns, parties) {
+  const result = []
+  for (const p of parties) {
+    if (!p.interestRate) continue
+    const txns = allTxns.filter(t => t.partyId === p._id && isInterest(t))
+    const charges = txns.filter(t => t.type === 'charge').reduce((s, t) => s + t.amount, 0)
+    const payments = txns.filter(t => t.type === 'payment').reduce((s, t) => s + t.amount, 0)
+    const pending = Math.round((charges - payments) * 100) / 100
+    if (pending > 0) {
+      const chargeCount = txns.filter(t => t.type === 'charge').length
+      result.push({ party: p, amount: pending, charges: chargeCount })
+    }
+  }
+  return result.sort((a, b) => b.amount - a.amount)
+}
+
 export function getPartnerWiseOutstanding(transactions, sources, asOfDate) {
   const ownerMap = {}
   const cutoff = asOfDate ? new Date(asOfDate) : new Date()
