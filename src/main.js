@@ -7,6 +7,7 @@ import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
 import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
+import { showConfirm } from './components/Modal.js'
 
 registerRoute('dashboard', renderDashboard)
 registerRoute('money-sources', renderMoneySources)
@@ -21,6 +22,24 @@ async function init() {
   if (locked) {
     await showAuthLock()
   }
+
+  let exitConfirmed = false
+  history.pushState(null, '', location.href)
+  window.addEventListener('popstate', () => {
+    if (exitConfirmed) return
+    history.pushState(null, '', location.href)
+    showConfirm({
+      title: 'Exit App?',
+      message: 'Are you sure you want to exit?',
+      confirmText: 'Exit',
+      danger: true,
+    }).then((confirmed) => {
+      if (confirmed) {
+        exitConfirmed = true
+        history.back()
+      }
+    })
+  })
 
   initRouter()
 }
