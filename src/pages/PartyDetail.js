@@ -587,7 +587,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
     type: 'charge',
     amount: Math.round(totalInterest * 100) / 100,
     date: actualToDate,
-    notes: `Interest charged from ${actualFromDate} to ${actualToDate}`,
+    notes: `Interest charged from ${formatDate(actualFromDate)} to ${formatDate(actualToDate)}`,
     breakdown: charges,
     updatedAt: new Date().toISOString(),
   }
