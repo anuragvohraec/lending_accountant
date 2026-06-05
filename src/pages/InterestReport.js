@@ -1,4 +1,4 @@
-import { formatCurrencyFull } from '../utils/formatters.js'
+import { formatCurrencyFull, formatDate } from '../utils/formatters.js'
 
 function isInterest(t) { return t.category === 'interest' }
 
@@ -85,7 +85,7 @@ function renderPartyReport(r) {
       <h3 class="text-xs font-bold mb-0.5">${r.party.name}</h3>
       <p class="text-[10px] text-gray-500 mb-1">${r.party.interestRate}%/mo — Rate: ${r.party.interestRate}% per month</p>
       ${lc ? `
-      <h4 class="text-[10px] font-semibold mb-0.5">Last Interest Charge: ${formatCurrencyFull(lc.amount)} on ${lc.date}</h4>
+      <h4 class="text-[10px] font-semibold mb-0.5">Last Interest Charge: ${formatCurrencyFull(lc.amount)} on ${formatDate(lc.date)}</h4>
       <table class="w-full text-[10px] border-collapse mb-1">
         <thead>
           <tr class="border-b border-gray-300">
@@ -103,7 +103,7 @@ function renderPartyReport(r) {
               <td class="text-left pr-1 py-0.5 ${b.debit > 0 ? 'text-red-600 font-medium' : 'text-gray-300'}">${b.debit > 0 ? formatCurrencyFull(b.debit) : '-'}</td>
               <td class="text-left pr-1 py-0.5 ${b.credit > 0 ? 'text-green-600 font-medium' : 'text-gray-300'}">${b.credit > 0 ? formatCurrencyFull(b.credit) : '-'}</td>
               <td class="text-right pr-1 py-0.5">${formatCurrencyFull(b.outstanding)}</td>
-              <td class="text-left px-1 py-0.5">${b.date}</td>
+              <td class="text-left px-1 py-0.5">${formatDate(b.date)}</td>
               <td class="text-right px-1 py-0.5">${b.days}</td>
               <td class="text-right pl-1 py-0.5">${formatCurrencyFull(b.amount)}</td>
             </tr>

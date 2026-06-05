@@ -13,16 +13,25 @@ export function formatCurrencyFull(n) {
   return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
 }
 
+function toDDMMYY(d) {
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = String(d.getFullYear()).slice(-2)
+  return `${day}/${month}/${year}`
+}
+
+function toDDMMYYHHMM(d) {
+  return toDDMMYY(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  return toDDMMYY(new Date(dateStr))
 }
 
 export function formatDateTime(dateStr) {
   if (!dateStr) return '-'
-  const d = new Date(dateStr)
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return toDDMMYYHHMM(new Date(dateStr))
 }
 
 export function formatDateShort(dateStr) {
@@ -34,7 +43,7 @@ export function formatDateShort(dateStr) {
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
   if (days < 7) return days + 'd ago'
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+  return toDDMMYY(d)
 }
 
 export function daysBetween(a, b) {
