@@ -56,6 +56,7 @@ export function renderReportOverlay(reportData, onClose) {
 
   const style = document.createElement('style')
   style.textContent = `
+    .report-party { margin-bottom: 16px; break-inside: avoid; }
     @media print {
       body * { visibility: hidden !important; }
       #report-overlay, #report-overlay * { visibility: visible !important; }
@@ -124,7 +125,7 @@ function renderPartyReport(r) {
             <td class="text-right py-0.5">${formatCurrencyFull(r.totalCharged)}</td>
           </tr>
           <tr class="border-b border-gray-100">
-            <td class="py-0.5">Payments After Last Charge (${r.paymentsAfter.length})</td>
+            <td class="py-0.5">Interest paid</td>
             <td class="text-right py-0.5 text-green-600">-${formatCurrencyFull(r.paymentsAfterSum)}</td>
           </tr>
           <tr class="font-semibold border-t border-gray-400">
