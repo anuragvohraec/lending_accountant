@@ -19,6 +19,12 @@ export function formatCurrencyFull(n) {
   return sign + '₹' + Math.abs(num).toLocaleString('en-IN')
 }
 
+export function formatCurrencyPrecise(n) {
+  if (n == null || isNaN(n)) return '₹0.00'
+  const sign = Number(n) < 0 ? '-' : ''
+  return sign + '₹' + Math.abs(Number(n)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function toDDMMYY(d) {
   const day = String(d.getDate()).padStart(2, '0')
   const month = String(d.getMonth() + 1).padStart(2, '0')
