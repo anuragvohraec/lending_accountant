@@ -60,13 +60,16 @@ export async function renderMoneySourceDetail(container, navigate, params) {
         </div>
       </div>
 
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between mb-2.5">
         <h3 class="font-bold text-sm">Ledger</h3>
         <div class="flex gap-2">
-          <button class="btn-secondary text-xs py-1.5 px-3" id="filter-ledger"><ion-icon name="funnel-outline" class="text-sm mr-1"></ion-icon>Filter</button>
-          <button class="btn-secondary text-xs py-1.5 px-3" id="report-ledger"><ion-icon name="download-outline" class="text-sm mr-1"></ion-icon>Report</button>
-          <button class="btn-primary text-xs py-1.5 px-3" id="add-ledger-entry"><ion-icon name="add-outline" class="text-sm mr-1"></ion-icon>Add Entry</button>
+          <button class="btn-outline btn-sm" id="filter-ledger"><ion-icon name="funnel-outline" class="text-sm"></ion-icon></button>
+          <button class="btn-outline btn-sm" id="report-ledger"><ion-icon name="download-outline" class="text-sm"></ion-icon></button>
         </div>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <button class="flex-1 text-sm font-semibold py-2.5 rounded-xl border-2 border-red-200 text-red-600 bg-red-50 active:bg-red-100 active:scale-[0.97] transition-all" id="add-debit-entry">Debit (Money Out)</button>
+        <button class="flex-1 text-sm font-semibold py-2.5 rounded-xl border-2 border-green-200 text-green-600 bg-green-50 active:bg-green-100 active:scale-[0.97] transition-all" id="add-credit-entry">Credit (Money In)</button>
       </div>
 
       <div id="ledger-filters" class="flex flex-wrap gap-2 hidden"></div>
@@ -77,7 +80,8 @@ export async function renderMoneySourceDetail(container, navigate, params) {
     </div>
   `
 
-  document.getElementById('add-ledger-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate))
+  document.getElementById('add-debit-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate, 'debit'))
+  document.getElementById('add-credit-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate, 'credit'))
   document.getElementById('report-ledger').addEventListener('click', () => showReportForm(source._id, navigate))
   document.getElementById('filter-ledger').addEventListener('click', () => {
     document.getElementById('ledger-filters').classList.toggle('hidden')
@@ -412,16 +416,11 @@ function generateCSV(sourceId, from, to) {
   showToast('Report downloaded')
 }
 
-async function showSourceTxnForm(sourceId, container, navigate) {
+async function showSourceTxnForm(sourceId, container, navigate, presetType) {
+  const typeLabels = { debit: 'Debit (Money Out)', credit: 'Credit (Money In)' }
   const content = `
     <div class="space-y-3">
-      <div>
-        <label class="input-label">Type *</label>
-        <select class="input" id="stxn-type">
-          <option value="credit">Credit (Money In)</option>
-          <option value="debit">Debit (Money Out)</option>
-        </select>
-      </div>
+      <p class="text-sm font-semibold ${presetType === 'debit' ? 'text-red-600' : 'text-green-600'}">${typeLabels[presetType]}</p>
       <div>
         <label class="input-label">Amount *</label>
         <input class="input" id="stxn-amount" type="number" step="0.01" placeholder="0.00" />
@@ -438,7 +437,7 @@ async function showSourceTxnForm(sourceId, container, navigate) {
   `
 
   const result = await showModal({
-    title: 'Add Ledger Entry',
+    title: `New ${typeLabels[presetType]}`,
     content,
     confirmText: 'Add',
     onMounted: () => {
@@ -451,7 +450,7 @@ async function showSourceTxnForm(sourceId, container, navigate) {
       if (!desc) { showToast('Description is required', 'error'); return false }
       return {
         sourceId,
-        type: document.getElementById('stxn-type')?.value || 'credit',
+        type: presetType,
         amount,
         date: getDateInputValue('stxn-date') || new Date().toISOString(),
         description: desc,

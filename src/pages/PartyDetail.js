@@ -105,9 +105,12 @@ export async function renderPartyDetail(container, navigate, params) {
       </div>
 
       <div class="card">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-semibold text-sm">Principal Transaction History (${principalTxns.length})</h3>
-          <button class="text-xs text-primary font-medium" id="add-principal-btn">+ Add</button>
+        <div class="mb-3">
+          <h3 class="font-semibold text-sm mb-2.5">Principal Transaction History (${principalTxns.length})</h3>
+          <div class="flex gap-2">
+            <button class="flex-1 text-sm font-semibold py-2.5 rounded-xl border-2 border-red-200 text-red-600 bg-red-50 active:bg-red-100 active:scale-[0.97] transition-all" id="add-debit-btn">Debit (Give)</button>
+            <button class="flex-1 text-sm font-semibold py-2.5 rounded-xl border-2 border-green-200 text-green-600 bg-green-50 active:bg-green-100 active:scale-[0.97] transition-all" id="add-credit-btn">Credit (Return)</button>
+          </div>
         </div>
         <div id="principal-txn-list"></div>
       </div>
@@ -132,7 +135,8 @@ export async function renderPartyDetail(container, navigate, params) {
   renderInterestTransactions(interestTxns, sources, party, container, navigate)
 
   document.getElementById('add-collateral-btn')?.addEventListener('click', () => showCollateralForm(null, party._id, collaterals, party, allTxns, sources, container, navigate))
-  document.getElementById('add-principal-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, allTxns, container, navigate))
+  document.getElementById('add-debit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, allTxns, container, navigate, 'debit'))
+  document.getElementById('add-credit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, allTxns, container, navigate, 'credit'))
   document.getElementById('calc-interest-btn')?.addEventListener('click', () => showInterestChargeForm(party, allTxns, sources, container, navigate))
   document.getElementById('pay-interest-btn')?.addEventListener('click', () => showInterestPaymentForm(party, allTxns, sources, container, navigate))
 }
@@ -454,8 +458,9 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
   })
 }
 
-async function showTransactionForm(editTxn, party, sources, allTxns, container, navigate) {
+async function showTransactionForm(editTxn, party, sources, allTxns, container, navigate, presetType) {
   const isEdit = !!editTxn
+  const txnType = isEdit ? editTxn.type : presetType
   const activeSources = sources.filter((s) => s.status !== 'inactive')
 
   const sourceAllocHtml = activeSources.length > 0 ? `
@@ -479,15 +484,11 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
     </div>
   ` : ''
 
+  const typeLabels = { debit: 'Debit (Give)', credit: 'Credit (Return)' }
+
   const content = `
     <div class="space-y-3">
-      <div>
-        <label class="input-label">Type *</label>
-        <select class="input" id="txn-type">
-          <option value="debit" ${editTxn?.type === 'debit' ? 'selected' : ''}>Debit (Give)</option>
-          <option value="credit" ${editTxn?.type === 'credit' ? 'selected' : ''}>Credit (Return)</option>
-        </select>
-      </div>
+      <p class="text-sm font-semibold ${txnType === 'debit' ? 'text-red-600' : 'text-green-600'}">${typeLabels[txnType]}</p>
       ${sourceAllocHtml}
       <div>
         <label class="input-label">Amount *</label>
@@ -510,7 +511,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
   `
 
   const result = await showModal({
-    title: isEdit ? 'Edit Transaction' : 'New Transaction',
+    title: isEdit ? 'Edit Transaction' : `New ${typeLabels[txnType]}`,
     content,
     confirmText: isEdit ? 'Update' : 'Add',
     onMounted: () => {
@@ -575,7 +576,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
       return {
         partyId: party._id,
         category: 'principal',
-        type: document.getElementById('txn-type')?.value || 'debit',
+        type: txnType,
         amount,
         date: getDateInputValue('txn-date') || new Date().toISOString(),
         tags: document.getElementById('txn-tags')?.value.trim() || '',
