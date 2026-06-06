@@ -107,7 +107,6 @@ export async function renderDashboard(container) {
           </div>
           <div class="min-w-0">
             <div class="text-sm font-medium truncate">${pc.party.name}</div>
-            <div class="text-xs text-gray-400">${pc.charges} pending charge${pc.charges !== 1 ? 's' : ''}</div>
           </div>
         </div>
         <div class="font-mono font-semibold text-sm text-amber-600 ml-3">${formatCurrencyFull(pc.amount)}</div>

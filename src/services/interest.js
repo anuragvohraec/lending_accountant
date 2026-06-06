@@ -184,10 +184,9 @@ export function getPendingInterestByParty(allTxns, parties) {
     const txns = allTxns.filter(t => t.partyId === p._id && isInterest(t))
     const charges = txns.filter(t => t.type === 'charge').reduce((s, t) => s + t.amount, 0)
     const payments = txns.filter(t => t.type === 'payment').reduce((s, t) => s + t.amount, 0)
-    const pending = Math.round((charges - payments) * 100) / 100
-    if (pending > 0) {
-      const chargeCount = txns.filter(t => t.type === 'charge').length
-      result.push({ party: p, amount: pending, charges: chargeCount })
+      const pending = Math.round((charges - payments) * 100) / 100
+      if (pending > 0) {
+        result.push({ party: p, amount: pending })
     }
   }
   return result.sort((a, b) => b.amount - a.amount)
