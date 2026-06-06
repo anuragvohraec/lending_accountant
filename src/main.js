@@ -7,6 +7,7 @@ import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
 import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
+import { showToast } from './components/Toast.js'
 
 registerRoute('dashboard', renderDashboard)
 registerRoute('money-sources', renderMoneySources)
@@ -117,29 +118,50 @@ function showPinPad(overlay) {
   })
 }
 
-window.serviceWorker_isInitialized = new Promise(async res=>{
-    if('serviceWorker' in navigator){
-        try{
-            let t;
-            const reg = await navigator.serviceWorker.register("sw.js");
-            if(reg.active){
-                res(true);
-            }
-            reg.onupdatefound = (e)=>{
-                t = setInterval(()=>{
-                    if(reg.active){
-                        res(true);
-                        clearInterval(t);
-                        location.reload();
-                    }
-                },100);
-            }
-        }catch(e){
-            console.error("Recliner failed to register");
-            console.error(e);
-        }
-    }else{
-        console.log("Service worker not supported");
-    }
-});
+// Service Worker registration
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(err => {
+    console.error('SW registration failed:', err)
+  })
+}
+
+// Force update helper — call from Settings to check & activate a new SW
+window.forceSWUpdate = async function () {
+  if (!('serviceWorker' in navigator)) {
+    showToast('Service Worker not supported', 'error')
+    return
+  }
+  const reg = await navigator.serviceWorker.getRegistration()
+  if (!reg) {
+    showToast('No service worker registered', 'error')
+    return
+  }
+
+  // If a new SW is already waiting, activate it
+  if (reg.waiting) {
+    reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true })
+    showToast('Update found, reloading...')
+    return
+  }
+
+  // Listen for controller change when a new SW takes over
+  let timeout
+  const onControllerChange = () => {
+    clearTimeout(timeout)
+    showToast('Update found, reloading...')
+    setTimeout(() => location.reload(), 500)
+  }
+  navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true })
+
+  // Timeout — no update found
+  timeout = setTimeout(() => {
+    navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+    showToast('Already up to date')
+  }, 8000)
+
+  showToast('Checking for updates...')
+  reg.update()
+}
+
 document.addEventListener('DOMContentLoaded', init)

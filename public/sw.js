@@ -26,6 +26,12 @@ const ALLOWED_CDN_ORIGINS = [
   "cdn.jsdelivr.net"
 ];
 
+self.addEventListener("message", (e) => {
+  if (e.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((cache) => {
      return cache.addAll(URLS);

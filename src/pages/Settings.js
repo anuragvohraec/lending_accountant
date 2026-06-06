@@ -99,6 +99,13 @@ export async function renderSettings(container, navigate) {
             <span class="text-gray-500">Data entries</span>
             <span class="font-medium" id="data-count">Loading...</span>
           </div>
+          <button class="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50" id="force-update">
+            <ion-icon name="refresh-outline" class="text-gray-400 text-lg"></ion-icon>
+            <div class="text-left">
+              <div class="text-sm font-medium">Force Update</div>
+              <div class="text-xs text-gray-400">Check and apply latest app update</div>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -113,6 +120,10 @@ export async function renderSettings(container, navigate) {
     getMoneySources(), getParties(), getAllTransactions(), getCollaterals(),
   ])
   document.getElementById('data-count').textContent = (sources.length + parties.length + txns.length + collaterals.length) + ' records'
+
+  document.getElementById('force-update')?.addEventListener('click', () => {
+    if (window.forceSWUpdate) window.forceSWUpdate()
+  })
 
   const auditLogs = await getAuditLogs(20)
   const auditEl = document.getElementById('audit-log')
