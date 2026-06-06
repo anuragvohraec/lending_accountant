@@ -154,10 +154,18 @@ window.forceSWUpdate = async function () {
   }
   navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true })
 
-  // Timeout — no update found
-  timeout = setTimeout(() => {
+  // Timeout — no SW update found, but app assets may have changed
+  timeout = setTimeout(async () => {
     navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
-    showToast('Already up to date')
+    // Clear all caches so fresh assets are fetched from network on reload
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map(k => caches.delete(k)))
+      showToast('Cache refreshed, reloading...')
+      setTimeout(() => location.reload(), 500)
+    } else {
+      showToast('Already up to date')
+    }
   }, 8000)
 
   showToast('Checking for updates...')
