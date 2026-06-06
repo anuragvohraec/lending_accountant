@@ -73,7 +73,12 @@ export async function renderSettings(container, navigate) {
             </div>
             <div>
               <label class="input-label">Password</label>
-              <input class="input" id="couch-pass" type="password" value="${settings.couchPassword || ''}" placeholder="••••••••" />
+              <div class="relative">
+                <input class="input pr-10" id="couch-pass" type="password" value="${settings.couchPassword || ''}" placeholder="••••••••" />
+                <button type="button" id="toggle-pass" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabindex="-1">
+                  <ion-icon name="eye-outline" class="text-lg"></ion-icon>
+                </button>
+              </div>
             </div>
           </div>
           <div class="flex items-center gap-3 pt-1">
@@ -222,6 +227,18 @@ export async function renderSettings(container, navigate) {
       couchPassword: document.getElementById('couch-pass')?.value || '',
     })
     showToast('Settings saved')
+  })
+
+  document.getElementById('toggle-pass')?.addEventListener('click', () => {
+    const input = document.getElementById('couch-pass')
+    const icon = document.querySelector('#toggle-pass ion-icon')
+    if (input.type === 'password') {
+      input.type = 'text'
+      icon.name = 'eye-off-outline'
+    } else {
+      input.type = 'password'
+      icon.name = 'eye-outline'
+    }
   })
 
   toggleBtn?.addEventListener('click', async () => {
