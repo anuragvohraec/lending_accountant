@@ -125,51 +125,18 @@ if ('serviceWorker' in navigator) {
   })
 }
 
-// Force update helper — call from Settings to check & activate a new SW
+// Force update helper — call from Settings to clear caches, unregister SW, and reload
 window.forceSWUpdate = async function () {
-  if (!('serviceWorker' in navigator)) {
-    showToast('Service Worker not supported', 'error')
-    return
+  showToast('Refreshing app...')
+  if ('caches' in window) {
+    const keys = await caches.keys()
+    await Promise.all(keys.map(k => caches.delete(k)))
   }
-  const reg = await navigator.serviceWorker.getRegistration()
-  if (!reg) {
-    showToast('No service worker registered', 'error')
-    return
+  if ('serviceWorker' in navigator) {
+    const reg = await navigator.serviceWorker.getRegistration()
+    if (reg) await reg.unregister()
   }
-
-  // If a new SW is already waiting, activate it
-  if (reg.waiting) {
-    reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true })
-    showToast('Update found, reloading...')
-    return
-  }
-
-  // Listen for controller change when a new SW takes over
-  let timeout
-  const onControllerChange = () => {
-    clearTimeout(timeout)
-    showToast('Update found, reloading...')
-    setTimeout(() => location.reload(), 500)
-  }
-  navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true })
-
-  // Timeout — no SW update found, but app assets may have changed
-  timeout = setTimeout(async () => {
-    navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
-    // Clear all caches so fresh assets are fetched from network on reload
-    if ('caches' in window) {
-      const keys = await caches.keys()
-      await Promise.all(keys.map(k => caches.delete(k)))
-      showToast('Cache refreshed, reloading...')
-      setTimeout(() => location.reload(), 500)
-    } else {
-      showToast('Already up to date')
-    }
-  }, 8000)
-
-  showToast('Checking for updates...')
-  reg.update()
+  setTimeout(() => location.reload(), 300)
 }
 
 document.addEventListener('DOMContentLoaded', init)
