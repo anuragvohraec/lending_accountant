@@ -104,6 +104,10 @@ export async function renderSettings(container, navigate) {
             <span class="text-gray-500">Data entries</span>
             <span class="font-medium" id="data-count">Loading...</span>
           </div>
+          <div class="flex justify-between px-3 py-2">
+            <span class="text-gray-500">SW Cache</span>
+            <span class="font-medium" id="sw-version">Loading...</span>
+          </div>
           <button class="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50" id="force-update">
             <ion-icon name="refresh-outline" class="text-gray-400 text-lg"></ion-icon>
             <div class="text-left">
@@ -125,6 +129,25 @@ export async function renderSettings(container, navigate) {
     getMoneySources(), getParties(), getAllTransactions(), getCollaterals(),
   ])
   document.getElementById('data-count').textContent = (sources.length + parties.length + txns.length + collaterals.length) + ' records'
+
+  ;(async () => {
+    const el = document.getElementById('sw-version')
+    if (!('serviceWorker' in navigator)) { el.textContent = 'N/A'; return }
+    const reg = await navigator.serviceWorker.getRegistration()
+    if (!reg?.active) { el.textContent = 'N/A'; return }
+    const handler = (e) => {
+      if (e.data?.type === 'VERSION') {
+        navigator.serviceWorker.removeEventListener('message', handler)
+        el.textContent = e.data.version
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', handler)
+    reg.active.postMessage({ type: 'GET_VERSION' })
+    setTimeout(() => {
+      navigator.serviceWorker.removeEventListener('message', handler)
+      if (el.textContent === 'Loading...') el.textContent = 'unknown'
+    }, 2000)
+  })()
 
   document.getElementById('force-update')?.addEventListener('click', () => {
     if (window.forceSWUpdate) window.forceSWUpdate()

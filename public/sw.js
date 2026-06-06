@@ -1,4 +1,4 @@
-const VERSION = '3';
+const VERSION = '4';
 const CACHE = 'munimji-' + VERSION;
 
 const URLS = [
@@ -29,6 +29,8 @@ const ALLOWED_CDN_ORIGINS = [
 self.addEventListener("message", (e) => {
   if (e.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
+  } else if (e.data?.type === "GET_VERSION") {
+    e.source.postMessage({ type: "VERSION", version: VERSION });
   }
 });
 
