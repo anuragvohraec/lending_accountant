@@ -35,6 +35,11 @@ export function truncate(str, len = 50) {
   return str.length > len ? str.slice(0, len) + '...' : str
 }
 
+export function escHtml(str) {
+  if (!str) return ''
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export function sanitize(str) {
   if (!str) return ''
   const d = document.createElement('div')

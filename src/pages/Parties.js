@@ -7,6 +7,7 @@ import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
 import { peopleIllustration } from '../assets/vectors.js'
+import { escHtml } from '../utils/helpers.js'
 
 export async function renderParties(container, navigate) {
   renderHeader('Lending Parties')
@@ -106,7 +107,7 @@ async function showPartyForm(editParty, parties, allTxns, container, navigate) {
       </div>
       <div>
         <label class="input-label">Address</label>
-        <textarea class="input" id="pf-address" rows="2" placeholder="Address">${editParty?.address || ''}</textarea>
+        <textarea class="input" id="pf-address" rows="3" placeholder="Address">${escHtml(editParty?.address || '')}</textarea>
       </div>
       <div>
         <label class="input-label">Identity / ID Proof</label>
@@ -136,7 +137,7 @@ async function showPartyForm(editParty, parties, allTxns, container, navigate) {
       </div>
       <div>
         <label class="input-label">Notes</label>
-        <textarea class="input" id="pf-notes" rows="2" placeholder="Optional notes">${editParty?.notes || ''}</textarea>
+        <textarea class="input" id="pf-notes" rows="3" placeholder="Optional notes">${escHtml(editParty?.notes || '')}</textarea>
       </div>
     </div>
   `

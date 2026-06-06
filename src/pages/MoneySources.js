@@ -6,6 +6,7 @@ import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
 import { moneyIllustration, decorativeBg } from '../assets/vectors.js'
+import { escHtml } from '../utils/helpers.js'
 
 export async function renderMoneySources(container, navigate) {
   renderHeader('Money Sources')
@@ -168,7 +169,7 @@ async function showSourceForm(editSource, sources, allTxns, container) {
       </div>
       <div>
         <label class="input-label">Notes</label>
-        <textarea class="input" id="sf-notes" rows="2" placeholder="Optional notes">${editSource?.notes || ''}</textarea>
+        <textarea class="input" id="sf-notes" rows="3" placeholder="Optional notes">${escHtml(editSource?.notes || '')}</textarea>
       </div>
     </div>
   `

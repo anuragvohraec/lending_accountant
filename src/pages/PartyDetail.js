@@ -7,10 +7,7 @@ import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
 import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
-
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
+import { escHtml } from '../utils/helpers.js'
 
 export async function renderPartyDetail(container, navigate, params) {
   const removeLoader = showSkeleton(container)
@@ -61,8 +58,8 @@ export async function renderPartyDetail(container, navigate, params) {
             ${party.phone ? `<div class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><ion-icon name="call-outline" class="text-sm"></ion-icon>${party.phone}</div>` : ''}
           </div>
         </div>
-        ${party.address ? `<p class="text-xs text-gray-400 flex items-start gap-1"><ion-icon name="location-outline" class="text-sm mt-0.5 shrink-0"></ion-icon>${party.address}</p>` : ''}
-        ${party.notes ? `<p class="text-xs text-gray-500 mt-1">${party.notes}</p>` : ''}
+        ${party.address ? `<p class="text-xs text-gray-400 flex items-start gap-1"><ion-icon name="location-outline" class="text-sm mt-0.5 shrink-0"></ion-icon>${escHtml(party.address)}</p>` : ''}
+        ${party.notes ? `<p class="text-xs text-gray-500 mt-1">${escHtml(party.notes)}</p>` : ''}
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -268,7 +265,7 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
               ${t.tags ? t.tags.split(',').map((tag) => `<span class="badge-gray text-[10px]">${tag.trim()}</span>`).join('') : ''}
             </div>
             <div class="text-xs text-gray-400 mt-0.5">${formatDateTime(t.date)}</div>
-            ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5 truncate">${t.notes}</div>` : ''}
+            ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5 truncate">${escHtml(t.notes)}</div>` : ''}
             ${sourceNames ? `<div class="text-xs text-gray-400 mt-0.5">${t.type === 'debit' ? 'From' : 'To'}: ${sourceNames}</div>` : ''}
             ${allocs.length > 0 ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View breakdown &rsaquo;</button>` : ''}
           </div>
@@ -351,7 +348,7 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
               <div class="text-xs text-gray-500 mt-0.5">
                 ${t.notes.length > 80
                   ? `<span class="note-short">${escHtml(t.notes.slice(0, 80))}...</span><span class="note-full hidden" style="white-space:pre-wrap"></span> <button class="text-primary note-toggle text-xs" data-full="${escHtml(t.notes)}">Read more</button>`
-                  : escHtml(t.notes)
+                  : `<span style="white-space:pre-wrap">${escHtml(t.notes)}</span>`
                 }
               </div>
             ` : ''}
@@ -503,7 +500,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
       </div>
       <div>
         <label class="input-label">Notes</label>
-        <textarea class="input" id="txn-notes" rows="2" placeholder="Transaction notes">${editTxn?.notes || ''}</textarea>
+        <textarea class="input" id="txn-notes" rows="3" placeholder="Transaction notes">${escHtml(editTxn?.notes || '')}</textarea>
       </div>
       <div>
         <label class="input-label">Tags (comma separated)</label>
@@ -706,7 +703,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
       </div>
       <div>
         <label class="input-label">Notes</label>
-        <textarea class="input" id="pay-notes" rows="2" placeholder="Optional notes"></textarea>
+        <textarea class="input" id="pay-notes" rows="3" placeholder="Optional notes"></textarea>
       </div>
     </div>
   `
@@ -721,7 +718,6 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
     onConfirm: () => {
       const amount = parseFloat(document.getElementById('pay-amount')?.value)
       if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
-      const notes = document.getElementById('pay-notes')?.value.trim()
       return {
         partyId: party._id,
         category: 'interest',
@@ -792,7 +788,7 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
       </div>
       <div>
         <label class="input-label">Notes</label>
-        <textarea class="input" id="col-notes" rows="2">${editCollateral?.notes || ''}</textarea>
+        <textarea class="input" id="col-notes" rows="3">${escHtml(editCollateral?.notes || '')}</textarea>
       </div>
     </div>
   `
@@ -895,7 +891,7 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
       </div>
       <div>
         <label class="input-label">Address</label>
-        <textarea class="input" id="pf-address" rows="2">${party?.address || ''}</textarea>
+        <textarea class="input" id="pf-address" rows="3">${escHtml(party?.address || '')}</textarea>
       </div>
       <div>
         <label class="input-label">Identity</label>
@@ -925,7 +921,7 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
       </div>
       <div>
         <label class="input-label">Notes</label>
-        <textarea class="input" id="pf-notes" rows="2">${party?.notes || ''}</textarea>
+        <textarea class="input" id="pf-notes" rows="3">${escHtml(party?.notes || '')}</textarea>
       </div>
     </div>
   `
