@@ -8,6 +8,10 @@ import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
 import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export async function renderPartyDetail(container, navigate, params) {
   const removeLoader = showSkeleton(container)
   const [party, sources, allTxns, collaterals] = await Promise.all([
@@ -343,7 +347,14 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
               <span class="text-sm font-medium">${t.type === 'charge' ? 'Interest Charged' : 'Interest Paid'}</span>
             </div>
             <div class="text-xs text-gray-400 mt-0.5">${formatDateTime(t.date)}</div>
-            ${t.notes ? `<div class="text-xs text-gray-500 mt-0.5">${t.notes}</div>` : ''}
+            ${t.notes ? `
+              <div class="text-xs text-gray-500 mt-0.5">
+                ${t.notes.length > 80
+                  ? `<span class="note-short">${escHtml(t.notes.slice(0, 80))}...</span><span class="note-full hidden" style="white-space:pre-wrap"></span> <button class="text-primary note-toggle text-xs" data-full="${escHtml(t.notes)}">Read more</button>`
+                  : escHtml(t.notes)
+                }
+              </div>
+            ` : ''}
             ${hasBreakdown ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View calculation &rsaquo;</button>` : ''}
           </div>
           <div class="flex items-center gap-2 ml-3">
@@ -425,6 +436,23 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
       logAction('delete', 'transaction', party._id, `Deleted ${toDelete.length} interest charges from ${formatDate(chargeDate)} onwards`)
       showToast(`Deleted ${toDelete.length} interest charge(s)`)
       renderPartyDetail(container, navigate, { id: party._id })
+    })
+  })
+
+  el.querySelectorAll('.note-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const short = btn.parentElement.querySelector('.note-short')
+      const full = btn.parentElement.querySelector('.note-full')
+      if (full.classList.contains('hidden')) {
+        full.textContent = btn.dataset.full
+        full.classList.remove('hidden')
+        short.classList.add('hidden')
+        btn.textContent = 'Show less'
+      } else {
+        full.classList.add('hidden')
+        short.classList.remove('hidden')
+        btn.textContent = 'Read more'
+      }
     })
   })
 }
