@@ -347,7 +347,9 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
             ${hasBreakdown ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View calculation &rsaquo;</button>` : ''}
           </div>
           <div class="flex items-center gap-2 ml-3">
-            ${t.type === 'payment' ? `<button class="btn-icon text-gray-300 hover:text-red-500 delete-int-payment" data-id="${t._id}" title="Delete"><ion-icon name="trash-outline" class="text-lg"></ion-icon></button>` : ''}
+            ${t.type === 'charge'
+              ? `<button class="btn-icon text-gray-300 hover:text-red-500 delete-int-charge" data-id="${t._id}" data-date="${t.date}" title="Delete"><ion-icon name="trash-outline" class="text-lg"></ion-icon></button>`
+              : `<button class="btn-icon text-gray-300 hover:text-red-500 delete-int-payment" data-id="${t._id}" title="Delete"><ion-icon name="trash-outline" class="text-lg"></ion-icon></button>`}
             <div class="text-right">
               <div class="${t.type === 'charge' ? 'amount-negative' : 'amount-positive'} text-sm">${t.type === 'charge' ? '+' : '-'}${formatCurrencyFull(t.amount)}</div>
               <div class="text-xs font-mono text-gray-400">${formatCurrencyFull(runningBalance)}</div>
@@ -398,6 +400,30 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
       await deleteTransaction(btn.dataset.id)
       logAction('delete', 'transaction', btn.dataset.id, 'Deleted interest payment')
       showToast('Interest payment deleted')
+      renderPartyDetail(container, navigate, { id: party._id })
+    })
+  })
+
+  el.querySelectorAll('.delete-int-charge').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const chargeDate = btn.dataset.date
+      const charges = txns.filter(t => t.type === 'charge')
+      const toDelete = charges.filter(t => new Date(t.date) >= new Date(chargeDate))
+      const msg = toDelete.length === 1
+        ? `This will remove the interest charge dated ${formatDate(chargeDate)}. You will need to recalculate interest. Continue?`
+        : `This will remove ${toDelete.length} interest charges from ${formatDate(chargeDate)} onwards. Interest payments will not be affected. You will need to recalculate interest. Continue?`
+      const confirmed = await showConfirm({
+        title: 'Delete Interest Charge?',
+        message: msg,
+        confirmText: toDelete.length > 1 ? `Delete ${toDelete.length} Charges` : 'Delete',
+        danger: true,
+      })
+      if (!confirmed) return
+      for (const charge of toDelete) {
+        await deleteTransaction(charge._id)
+      }
+      logAction('delete', 'transaction', party._id, `Deleted ${toDelete.length} interest charges from ${formatDate(chargeDate)} onwards`)
+      showToast(`Deleted ${toDelete.length} interest charge(s)`)
       renderPartyDetail(container, navigate, { id: party._id })
     })
   })
