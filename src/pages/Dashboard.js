@@ -36,6 +36,12 @@ export async function renderDashboard(container) {
         </div>
         <div class="chart-container" style="height:220px"><canvas id="dash-chart"></canvas></div>
       </div>
+      <div id="dash-reports" class="card">
+        <h3 class="font-semibold text-sm mb-3">Reports</h3>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-outline btn-sm" id="report-btn-interest"><ion-icon name="document-text-outline" class="text-sm mr-1"></ion-icon>Interest Collection Report</button>
+        </div>
+      </div>
       <div id="dash-recent" class="card">
         <h3 class="font-semibold text-sm mb-3">Recent Transactions</h3>
         <div id="dash-recent-list"></div>
@@ -192,6 +198,10 @@ export async function renderDashboard(container) {
   })
 
   document.getElementById('report-btn')?.addEventListener('click', () => {
+    const data = generateInterestReport(allTxns, activeParties)
+    renderReportOverlay(data)
+  })
+  document.getElementById('report-btn-interest')?.addEventListener('click', () => {
     const data = generateInterestReport(allTxns, activeParties)
     renderReportOverlay(data)
   })
