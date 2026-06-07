@@ -2,8 +2,13 @@ import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactio
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
 import { getOutstandingForParty, getPendingInterestByParty } from '../services/interest.js'
 import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
+import { generateTaxReport, renderTaxReportOverlay } from './TaxReport.js'
 import { renderHeader } from '../components/Header.js'
 import { showSkeleton } from '../components/Loading.js'
+import { showModal } from '../components/Modal.js'
+import { showToast } from '../components/Toast.js'
+import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
+import { escHtml } from '../utils/helpers.js'
 let charts = {}
 
 function destroyCharts() {
@@ -40,6 +45,7 @@ export async function renderDashboard(container) {
         <h3 class="font-semibold text-sm mb-3">Reports</h3>
         <div class="flex flex-wrap gap-2">
           <button class="btn-outline btn-sm" id="report-btn-interest"><ion-icon name="document-text-outline" class="text-sm mr-1"></ion-icon>Interest Collection Report</button>
+          <button class="btn-outline btn-sm" id="report-btn-tax"><ion-icon name="calculator-outline" class="text-sm mr-1"></ion-icon>Tax Calculation Report</button>
         </div>
       </div>
       <div id="dash-recent" class="card">
@@ -205,6 +211,92 @@ export async function renderDashboard(container) {
     const data = generateInterestReport(allTxns, activeParties)
     renderReportOverlay(data)
   })
+  document.getElementById('report-btn-tax')?.addEventListener('click', async () => {
+    const fy = getFinancialYearRange()
+    const today = new Date().toISOString().split('T')[0]
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+
+    const partyCheckboxes = parties.map(p => `
+      <label class="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+        <input type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary tax-party-cb" value="${p._id}" checked />
+        <span class="text-sm">${escHtml(p.name)}</span>
+        <span class="text-[10px] text-gray-400 ml-auto ${p.status !== 'active' ? 'text-amber-500' : ''}">${p.status !== 'active' ? p.status : ''}</span>
+      </label>
+    `).join('')
+
+    const content = `
+      <div class="space-y-3">
+        <div>
+          <label class="input-label">Select Parties</label>
+          <div class="max-h-40 overflow-y-auto border border-gray-200 rounded-xl px-3 py-1">${partyCheckboxes}</div>
+        </div>
+        <div>
+          <label class="input-label">Date Range</label>
+          <div class="flex items-center gap-2">
+            ${dateInputHTML({id: 'tax-from', value: sixMonthsAgo.toISOString().split('T')[0], cls: 'flex-1'})}
+            <span class="text-xs text-gray-400">to</span>
+            ${dateInputHTML({id: 'tax-to', value: today, cls: 'flex-1'})}
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 tax-quick-range" data-from="${fy.from}" data-to="${fy.to}">FY ${fy.label}</button>
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 tax-quick-range" data-from="${sixMonthsAgo.toISOString().split('T')[0]}" data-to="${today}">Last 6 months</button>
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 tax-quick-range" data-from="${new Date(new Date().setMonth(new Date().getMonth() - 3)).toISOString().split('T')[0]}" data-to="${today}">Last 3 months</button>
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 tax-quick-range" data-from="${new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString().split('T')[0]}" data-to="${today}">Last 1 year</button>
+        </div>
+      </div>
+    `
+
+    const result = await showModal({
+      title: 'Tax Calculation Report',
+      content,
+      confirmText: 'Generate',
+      onMounted: () => {
+        setupDateInput('tax-from')
+        setupDateInput('tax-to')
+        document.querySelectorAll('.tax-quick-range').forEach(btn => {
+          btn.addEventListener('click', () => {
+            setDateInputValue('tax-from', btn.dataset.from)
+            setDateInputValue('tax-to', btn.dataset.to)
+          })
+        })
+      },
+      onConfirm: () => {
+        const partyIds = Array.from(document.querySelectorAll('.tax-party-cb:checked')).map(cb => cb.value)
+        if (partyIds.length === 0) { showToast('Select at least one party', 'error'); return false }
+        const fromDate = getDateInputValue('tax-from')
+        const toDate = getDateInputValue('tax-to')
+        if (!fromDate || !toDate) { showToast('Select date range', 'error'); return false }
+        return { partyIds, fromDate, toDate }
+      },
+    })
+
+    if (!result || result === true) return
+    const data = generateTaxReport({
+      partyIds: result.partyIds,
+      fromDate: result.fromDate,
+      toDate: result.toDate,
+      allTxns,
+      allSources: sources,
+      allParties: parties,
+    })
+    if (data.rows.length === 0) { showToast('No data for selected criteria', 'error'); return }
+    renderTaxReportOverlay(data)
+  })
+}
+
+function getFinancialYearRange() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const aprStart = new Date(y, 3, 1)
+  const start = now < aprStart ? new Date(y - 1, 3, 1) : aprStart
+  const end = now < aprStart ? new Date(y, 2, 31) : new Date(y + 1, 2, 31)
+  return {
+    from: start.toISOString().split('T')[0],
+    to: end.toISOString().split('T')[0],
+    label: `${start.getFullYear()}-${end.getFullYear()}`
+  }
 }
 
 function setupChart(allTxns, parties) {
