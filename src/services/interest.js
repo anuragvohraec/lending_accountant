@@ -25,10 +25,10 @@ export function isInterest(t) {
 export function getOutstandingForParty(transactions, asOfDate) {
   let totalDebit = 0
   let totalCredit = 0
-  const cutoff = asOfDate ? new Date(asOfDate) : new Date()
+  const cutoff = asOfDate ? new Date(asOfDate) : null
   for (const t of transactions) {
     if (!isPrincipal(t)) continue
-    if (new Date(t.date) > cutoff) continue
+    if (cutoff && new Date(t.date) > cutoff) continue
     if (t.type === 'debit') totalDebit += t.amount
     else if (t.type === 'credit') totalCredit += t.amount
   }

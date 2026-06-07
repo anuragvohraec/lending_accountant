@@ -198,14 +198,14 @@ export function renderTaxReportOverlay(reportData, onClose) {
   const style = document.createElement('style')
   style.textContent = `
     @media print {
-      html, body { height: auto; overflow: visible; width: 148mm; margin: 0; padding: 0; }
+      html, body { height: auto; overflow: visible; margin: 0; padding: 0; }
       body > *:not(#report-overlay) { display: none !important; }
-      #report-overlay { position: static !important; height: auto !important; overflow: visible !important; width: 148mm !important; }
+      #report-overlay { position: static !important; height: auto !important; overflow: visible !important; }
       #report-toolbar { display: none !important; }
-      #report-body { padding: 5mm 4mm !important; max-width: none !important; }
-      table { font-size: 6.5pt !important; width: 100% !important; }
-      th, td { padding: 0.8mm 1mm !important; }
-      @page { size: A5 landscape; margin: 5mm 4mm; }
+      #report-body { padding: 8mm 12mm !important; max-width: none !important; }
+      table { font-size: 9pt !important; width: 100% !important; }
+      th, td { padding: 1.2mm 2mm !important; }
+      @page { size: A4 portrait; margin: 12mm 15mm; }
     }
   `
   document.head.appendChild(style)
