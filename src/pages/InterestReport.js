@@ -2,11 +2,13 @@ import { formatCurrencyFull, formatDate } from '../utils/formatters.js'
 
 function isInterest(t) { return t.category === 'interest' }
 
-export function generateInterestReport(allTxns, parties) {
+export function generateInterestReport(allTxns, parties, allLedgers) {
   const reportData = []
-  for (const p of parties) {
-    if (!p.interestRate) continue
-    const txns = allTxns.filter(t => t.partyId === p._id)
+  for (const ledger of allLedgers) {
+    const party = parties.find(p => p._id === ledger.partyId)
+    if (!party) continue
+    if (!ledger.interestRate) continue
+    const txns = allTxns.filter(t => t.partyId === party._id && t.ledgerId === ledger._id)
     const interestTxns = txns.filter(isInterest).sort((a, b) => new Date(b.date) - new Date(a.date))
     const charges = interestTxns.filter(t => t.type === 'charge')
     const payments = interestTxns.filter(t => t.type === 'payment')
@@ -25,7 +27,8 @@ export function generateInterestReport(allTxns, parties) {
     const netPending = Math.round((totalCharged - totalPaid) * 100) / 100
     if (netPending === 0) continue
     reportData.push({
-      party: p,
+      party,
+      ledger,
       lastCharge,
       previousPending,
       paymentsAfter,
@@ -100,8 +103,8 @@ function renderPartyReport(r) {
 
   return `
     <div class="report-party">
-      <h3 class="text-xs font-bold mb-0.5">${r.party.name}</h3>
-      <p class="text-[10px] text-gray-500 mb-1">${r.party.interestRate}%/mo — Rate: ${r.party.interestRate}% per month</p>
+      <h3 class="text-xs font-bold mb-0.5">${r.party.name} <span class="font-normal text-gray-400">${r.ledger.name}</span></h3>
+      <p class="text-[10px] text-gray-500 mb-1">${r.ledger.interestRate}%/mo</p>
       ${lc ? `
       <h4 class="text-[10px] font-semibold mb-0.5">Last Interest Charge: ${formatCurrencyFull(lc.amount)} on ${formatDate(lc.date)}</h4>
       <table class="w-full text-[10px] border-collapse mb-1">

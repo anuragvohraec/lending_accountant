@@ -55,7 +55,7 @@ export async function renderParties(container, navigate) {
     el.innerHTML = filtered.map((p) => {
       const txns = allTxns.filter((t) => t.partyId === p._id)
       const outstanding = getOutstandingForParty(txns)
-      const pendingInterest = p.interestRate ? getInterestPending(txns) : 0
+      const pendingInterest = getInterestPending(txns)
       const statusClass = accountStatusColor(p.status)
       return `
         <div class="card-flat party-card cursor-pointer active:scale-[0.98] transition-transform" data-id="${p._id}">
@@ -132,10 +132,6 @@ async function showPartyForm(editParty, parties, allTxns, container, navigate) {
         </div>
       </div>
       <div>
-        <label class="input-label">Interest Rate (% per month)</label>
-        <input class="input" id="pf-rate" type="number" step="0.1" value="${editParty?.interestRate || '0'}" placeholder="e.g. 2" />
-      </div>
-      <div>
         <label class="input-label">Notes</label>
         <textarea class="input" id="pf-notes" rows="3" placeholder="Optional notes">${escHtml(editParty?.notes || '')}</textarea>
       </div>
@@ -156,7 +152,6 @@ async function showPartyForm(editParty, parties, allTxns, container, navigate) {
         identity: document.getElementById('pf-identity')?.value.trim() || '',
         riskCategory: document.getElementById('pf-risk')?.value || 'low',
         status: document.getElementById('pf-status')?.value || 'active',
-        interestRate: parseFloat(document.getElementById('pf-rate')?.value) || 0,
         notes: document.getElementById('pf-notes')?.value.trim() || '',
         updatedAt: new Date().toISOString(),
       }

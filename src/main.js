@@ -128,6 +128,7 @@ if ('serviceWorker' in navigator) {
 // Force update helper — call from Settings to clear caches, unregister SW, and reload
 window.forceSWUpdate = async function () {
   showToast('Refreshing app...')
+  exitConfirmed = true
   if ('caches' in window) {
     const keys = await caches.keys()
     await Promise.all(keys.map(k => caches.delete(k)))

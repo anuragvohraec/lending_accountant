@@ -68,10 +68,57 @@ export async function deleteParty(id) {
   return db.remove(doc)
 }
 
-export async function getTransactions(partyId, category) {
+export async function getLedgers(partyId) {
+  const all = await allDocs('ledger_')
+  return partyId ? all.filter((l) => l.partyId === partyId) : all
+}
+
+export async function saveLedger(data) {
+  const db = getDb()
+  if (data._id) {
+    const existing = await db.get(data._id)
+    return db.put({ ...existing, ...data })
+  }
+  data._id = 'ledger_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  data.createdAt = new Date().toISOString()
+  return db.put(data)
+}
+
+export async function deleteLedger(id) {
+  const db = getDb()
+  const doc = await db.get(id)
+  return db.remove(doc)
+}
+
+export async function migrateLedgers(partyId) {
+  const ledgers = await getLedgers(partyId)
+  if (ledgers.length > 0) return
+  const party = await getParty(partyId)
+  const ledger = await saveLedger({
+    partyId,
+    name: 'Loan Account',
+    status: party.status || 'active',
+    interestRate: party.interestRate || 0,
+    notes: 'Default ledger (auto-created)',
+  })
+  const db = getDb()
+  const txns = await getTransactions(partyId)
+  for (const t of txns) {
+    t.ledgerId = ledger.id
+    await db.put(t)
+  }
+  const colls = await getCollaterals(partyId)
+  for (const c of colls) {
+    c.ledgerId = ledger.id
+    await db.put(c)
+  }
+}
+
+export async function getTransactions(partyId, ledgerId, category) {
   const all = await allDocs('txn_')
   let filtered = all.slice()
   if (partyId) filtered = filtered.filter((t) => t.partyId === partyId)
+  if (ledgerId) filtered = filtered.filter((t) => t.ledgerId === ledgerId)
   if (category) filtered = filtered.filter((t) => t.category === category)
   return filtered.sort((a, b) => new Date(b.date) - new Date(a.date))
 }
@@ -97,10 +144,12 @@ export async function deleteTransaction(id) {
   return db.remove(doc)
 }
 
-export async function getCollaterals(partyId) {
+export async function getCollaterals(partyId, ledgerId) {
   const all = await allDocs('collateral_')
-  if (partyId) return all.filter((c) => c.partyId === partyId).sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded))
-  return all.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded))
+  let filtered = all
+  if (partyId) filtered = filtered.filter((c) => c.partyId === partyId)
+  if (ledgerId) filtered = filtered.filter((c) => c.ledgerId === ledgerId)
+  return filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded))
 }
 
 export async function saveCollateral(data) {

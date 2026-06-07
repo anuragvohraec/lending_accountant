@@ -25,7 +25,7 @@ function monthsAgo(n) {
   return d.toISOString().split('T')[0]
 }
 
-export function generateTaxReport({ partyIds, fromDate, toDate, allTxns, allSources, allParties }) {
+export function generateTaxReport({ partyIds, fromDate, toDate, allTxns, allSources, allParties, allLedgers }) {
   const from = new Date(fromDate)
   const end = new Date(toDate)
   const dayBefore = new Date(from)
@@ -58,71 +58,76 @@ export function generateTaxReport({ partyIds, fromDate, toDate, allTxns, allSour
 
   for (const pid of partyIds) {
     const party = allParties.find(p => p._id === pid)
-    if (!party || !party.interestRate) continue
-    const rate = party.interestRate
-
-    // get transactions within range, sorted by date
-    const txns = allTxns
-      .filter(t => t.partyId === pid && isPrincipal(t))
-      .sort((a, b) => new Date(a.date) - new Date(b.date))
-
-    // compute outstanding per partner at dayBefore
-    const outstanding = {}
-    partners.forEach(p => { outstanding[p] = 0 })
-    for (const t of txns) {
-      const tDate = new Date(t.date)
-      if (tDate > dayBefore) break
-      const allocs = t.sourceAllocations && t.sourceAllocations.length > 0 ? t.sourceAllocations : [{ sourceId: null, amount: t.amount }]
-      for (const alloc of allocs) {
-        const src = alloc.sourceId ? sourceMap[alloc.sourceId] : null
-        const key = getPartnerKey(src)
-        if (!outstanding.hasOwnProperty(key)) outstanding[key] = 0
-        if (t.type === 'debit') outstanding[key] += alloc.amount
-        else if (t.type === 'credit') outstanding[key] -= alloc.amount
-      }
-    }
-
-    // now process transactions within the report range
-    const rangeTxns = txns.filter(t => {
-      const d = new Date(t.date)
-      return d >= from && d <= end
-    })
+    if (!party) continue
+    const pLedgers = (allLedgers || []).filter(l => l.partyId === pid && l.interestRate)
+    if (pLedgers.length === 0) continue
 
     const interest = {}
     partners.forEach(p => { interest[p] = 0 })
 
-    let prevDate = from
+    for (const ledger of pLedgers) {
+      const rate = ledger.interestRate
 
-    for (const t of rangeTxns) {
-      const tDate = new Date(t.date)
-      const days = Math.floor((tDate - prevDate) / 86400000)
-      if (days > 0) {
-        for (const p of partners) {
-          if (outstanding[p] > 0) {
-            interest[p] += Math.round(outstanding[p] * rate * days / 3000 * 100) / 100
-          }
+      // get ledger's transactions sorted by date
+      const txns = allTxns
+        .filter(t => t.partyId === pid && t.ledgerId === ledger._id && isPrincipal(t))
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+
+      if (txns.length === 0) continue
+
+      // compute outstanding per partner at dayBefore
+      const outstanding = {}
+      partners.forEach(p => { outstanding[p] = 0 })
+      for (const t of txns) {
+        const tDate = new Date(t.date)
+        if (tDate > dayBefore) break
+        const allocs = t.sourceAllocations && t.sourceAllocations.length > 0 ? t.sourceAllocations : [{ sourceId: null, amount: t.amount }]
+        for (const alloc of allocs) {
+          const src = alloc.sourceId ? sourceMap[alloc.sourceId] : null
+          const key = getPartnerKey(src)
+          if (!outstanding.hasOwnProperty(key)) outstanding[key] = 0
+          if (t.type === 'debit') outstanding[key] += alloc.amount
+          else if (t.type === 'credit') outstanding[key] -= alloc.amount
         }
       }
 
-      // apply transaction amounts
-      const allocs = t.sourceAllocations && t.sourceAllocations.length > 0 ? t.sourceAllocations : [{ sourceId: null, amount: t.amount }]
-      for (const alloc of allocs) {
-        const src = alloc.sourceId ? sourceMap[alloc.sourceId] : null
-        const key = getPartnerKey(src)
-        if (!outstanding.hasOwnProperty(key)) outstanding[key] = 0
-        if (t.type === 'debit') outstanding[key] += alloc.amount
-        else if (t.type === 'credit') outstanding[key] -= alloc.amount
+      // process transactions within the report range
+      const rangeTxns = txns.filter(t => {
+        const d = new Date(t.date)
+        return d >= from && d <= end
+      })
+
+      let prevDate = from
+
+      for (const t of rangeTxns) {
+        const tDate = new Date(t.date)
+        const days = Math.floor((tDate - prevDate) / 86400000)
+        if (days > 0) {
+          for (const p of partners) {
+            if (outstanding[p] > 0) {
+              interest[p] += Math.round(outstanding[p] * rate * days / 3000 * 100) / 100
+            }
+          }
+        }
+
+        const allocs = t.sourceAllocations && t.sourceAllocations.length > 0 ? t.sourceAllocations : [{ sourceId: null, amount: t.amount }]
+        for (const alloc of allocs) {
+          const src = alloc.sourceId ? sourceMap[alloc.sourceId] : null
+          const key = getPartnerKey(src)
+          if (!outstanding.hasOwnProperty(key)) outstanding[key] = 0
+          if (t.type === 'debit') outstanding[key] += alloc.amount
+          else if (t.type === 'credit') outstanding[key] -= alloc.amount
+        }
+
+        prevDate = tDate
       }
 
-      prevDate = tDate
-    }
-
-    // remaining days to end date
-    const remDays = Math.floor((end - prevDate) / 86400000) + 1
-    if (remDays > 0) {
-      for (const p of partners) {
-        if (outstanding[p] > 0) {
-          interest[p] += Math.round(outstanding[p] * rate * remDays / 3000 * 100) / 100
+      const remDays = Math.floor((end - prevDate) / 86400000) + 1
+      if (remDays > 0) {
+        for (const p of partners) {
+          if (outstanding[p] > 0) {
+            interest[p] += Math.round(outstanding[p] * rate * remDays / 3000 * 100) / 100
+          }
         }
       }
     }

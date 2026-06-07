@@ -1,4 +1,4 @@
-import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals } from '../db/database.js'
+import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
 import { getOutstandingForParty, getPendingInterestByParty } from '../services/interest.js'
 import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
@@ -62,8 +62,8 @@ export async function renderDashboard(container) {
   document.getElementById('refresh-dash')?.addEventListener('click', () => renderDashboard(container))
 
   const removeLoader = showSkeleton(document.getElementById('dash-summary'))
-  const [sources, parties, allTxns, collaterals, allSrcTxns] = await Promise.all([
-    getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(),
+  const [sources, parties, allTxns, collaterals, allSrcTxns, allLedgers] = await Promise.all([
+    getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(), getLedgers(),
   ])
   removeLoader()
 
@@ -204,11 +204,11 @@ export async function renderDashboard(container) {
   })
 
   document.getElementById('report-btn')?.addEventListener('click', () => {
-    const data = generateInterestReport(allTxns, activeParties)
+    const data = generateInterestReport(allTxns, activeParties, allLedgers)
     renderReportOverlay(data)
   })
   document.getElementById('report-btn-interest')?.addEventListener('click', () => {
-    const data = generateInterestReport(allTxns, activeParties)
+    const data = generateInterestReport(allTxns, activeParties, allLedgers)
     renderReportOverlay(data)
   })
   document.getElementById('report-btn-tax')?.addEventListener('click', async () => {
@@ -280,6 +280,7 @@ export async function renderDashboard(container) {
       allTxns,
       allSources: sources,
       allParties: parties,
+      allLedgers,
     })
     if (data.rows.length === 0) { showToast('No data for selected criteria', 'error'); return }
     renderTaxReportOverlay(data)

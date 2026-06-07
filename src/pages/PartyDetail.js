@@ -1,4 +1,4 @@
-import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl } from '../db/database.js'
+import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
 import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getPartnerWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
@@ -11,12 +11,23 @@ import { escHtml } from '../utils/helpers.js'
 
 export async function renderPartyDetail(container, navigate, params) {
   const removeLoader = showSkeleton(container)
-  const [party, sources, allTxns, collaterals] = await Promise.all([
-    getParty(params.id), getMoneySources(), getTransactions(params.id), getCollaterals(params.id),
+  const [party, sources, allTxns, collaterals, ledgers] = await Promise.all([
+    getParty(params.id), getMoneySources(), getTransactions(params.id), getCollaterals(params.id), getLedgers(params.id),
   ])
   for (const c of collaterals) {
     if (c._attachments?.image && !c.image) {
       c.image = await getCollateralImageDataUrl(c._id)
+    }
+  }
+
+  if (!ledgers || ledgers.length === 0) {
+    await migrateLedgers(params.id)
+    const [newLedgers, newTxns, newColls] = await Promise.all([getLedgers(params.id), getTransactions(params.id), getCollaterals(params.id)])
+    ledgers.push(...newLedgers)
+    allTxns.length = 0; allTxns.push(...newTxns)
+    collaterals.length = 0; collaterals.push(...newColls)
+    for (const c of collaterals) {
+      if (c._attachments?.image && !c.image) c.image = await getCollateralImageDataUrl(c._id)
     }
   }
   removeLoader()
@@ -26,42 +37,27 @@ export async function renderPartyDetail(container, navigate, params) {
     return
   }
 
+  ledgers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  let selectedLedger = ledgers[0]
+  let ledgerFilter = ['open']
   const activeSources = sources.filter((s) => s.status !== 'inactive')
-  const outstanding = getOutstandingForParty(allTxns)
-  const totalDebit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'debit').reduce((s, t) => s + t.amount, 0)
-  const totalCredit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'credit').reduce((s, t) => s + t.amount, 0)
-  const heldCollateral = collaterals.filter((c) => c.status === 'held')
-  const securityValue = heldCollateral.reduce((s, c) => s + (c.estimatedValue || 0), 0)
 
-  renderHeader(party.name, {
-    onBack: () => navigate('parties'),
-    rightAction: `<button class="btn-ghost btn-icon" id="party-menu"><ion-icon name="ellipsis-vertical-outline" class="text-xl"></ion-icon></button>`,
-  })
+  function getLedgerTxns(ledgerId) {
+    return allTxns.filter((t) => t.ledgerId === ledgerId)
+  }
 
-  document.getElementById('party-menu')?.addEventListener('click', () => showPartyMenu(party, allTxns, sources, container, navigate))
+  function getLedgerCollaterals(ledgerId) {
+    return collaterals.filter((c) => c.ledgerId === ledgerId)
+  }
 
-  const principalTxns = allTxns.filter((t) => !t.category || t.category === 'principal')
-  const interestTxns = allTxns.filter((t) => t.category === 'interest')
+  function renderCommonSummary() {
+    const outstanding = getOutstandingForParty(allTxns)
+    const totalDebit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'debit').reduce((s, t) => s + t.amount, 0)
+    const totalCredit = allTxns.filter((t) => t.category !== 'interest' && t.type === 'credit').reduce((s, t) => s + t.amount, 0)
+    const heldCollateral = collaterals.filter((c) => c.status === 'held')
+    const securityValue = heldCollateral.reduce((s, c) => s + (c.estimatedValue || 0), 0)
 
-  container.innerHTML = `
-    <div class="space-y-4 slide-up">
-      <div class="card-flat">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/10 to-vibgyor-violet/10 flex items-center justify-center text-primary font-bold text-lg shrink-0">
-            ${(party.name || '?').charAt(0).toUpperCase()}
-          </div>
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <span class="font-bold">${party.name}</span>
-              <span class="${accountStatusColor(party.status)}">${party.status}</span>
-            </div>
-            ${party.phone ? `<div class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><ion-icon name="call-outline" class="text-sm"></ion-icon>${party.phone}</div>` : ''}
-          </div>
-        </div>
-        ${party.address ? `<p class="text-xs text-gray-400 flex items-start gap-1"><ion-icon name="location-outline" class="text-sm mt-0.5 shrink-0"></ion-icon>${escHtml(party.address)}</p>` : ''}
-        ${party.notes ? `<p class="text-xs text-gray-500 mt-1">${escHtml(party.notes)}</p>` : ''}
-      </div>
-
+    document.getElementById('common-summary').innerHTML = `
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div class="card-flat text-center">
           <div class="stat-value text-red-500">${formatCurrency(totalDebit)}</div>
@@ -80,25 +76,78 @@ export async function renderPartyDetail(container, navigate, params) {
           <div class="stat-label">Security</div>
         </div>
       </div>
+    `
+  }
 
-      ${party.interestRate > 0 ? `
-        <div id="interest-section" class="card">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-sm">Interest Summary</h3>
-            <span class="badge-blue">${party.interestRate}%/mo</span>
+  function renderCommonInterestSummary() {
+    const hasInterestLedger = ledgers.some(l => l.interestRate > 0)
+    const el = document.getElementById('common-interest-summary')
+    if (!hasInterestLedger) { el.classList.add('hidden'); return }
+
+    const outstanding = getOutstandingForParty(allTxns)
+    const interestTxns = allTxns.filter((t) => t.category === 'interest')
+    const pendingInterest = interestTxns.reduce((s, t) => s + (t.type === 'charge' ? t.amount : -t.amount), 0)
+    const totalIncome = interestTxns.filter((t) => t.type === 'payment').reduce((s, t) => s + t.amount, 0)
+
+    el.innerHTML = `
+      <div class="card">
+        <h3 class="font-semibold text-sm mb-3">Interest Summary</h3>
+        <div>
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-sm text-gray-500">Principal Outstanding</span>
+            <span class="font-mono font-semibold text-sm">${formatCurrencyFull(outstanding)}</span>
           </div>
-          <div id="interest-details"></div>
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-sm text-gray-500">Pending Interest</span>
+            <span class="font-mono font-semibold text-sm ${pendingInterest > 0 ? 'text-amber-600' : ''}">${formatCurrencyFull(pendingInterest)}</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5 border-t border-gray-100 mt-1.5 pt-2">
+            <span class="text-sm text-gray-500">Total Interest Income</span>
+            <span class="font-mono font-semibold text-sm text-green-600">${formatCurrencyFull(totalIncome)}</span>
+          </div>
         </div>
-      ` : ''}
-
-      <div id="source-allocation" class="card">
-        <h3 class="font-semibold text-sm mb-3">Partner-wise Outstanding</h3>
-        <div id="source-outstanding-list"></div>
       </div>
+    `
+    el.classList.remove('hidden')
+  }
 
+  function renderCommonSourceOutstanding() {
+    const el = document.getElementById('common-source-outstanding')
+    const partnerWise = getPartnerWiseOutstanding(allTxns, sources)
+    const entries = Object.entries(partnerWise)
+
+    if (entries.length === 0) { el.classList.add('hidden'); return }
+
+    el.innerHTML = `
+      <div class="card">
+        <h3 class="font-semibold text-sm mb-3">Partner-wise Outstanding</h3>
+        ${entries.map(([owner, amount]) => `
+          <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+            <span class="text-sm">${owner}</span>
+            <span class="${amount > 0 ? 'amount-negative' : 'amount-neutral'} text-sm">${formatCurrencyFull(amount)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `
+    el.classList.remove('hidden')
+  }
+
+  function renderLedgerContent() {
+    if (!selectedLedger) {
+      const el = document.getElementById('ledger-content')
+      if (el) el.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">No ledgers match the current filter</div>'
+      return
+    }
+    const lid = selectedLedger._id
+    const txns = getLedgerTxns(lid)
+    const colls = getLedgerCollaterals(lid)
+    const principalTxns = txns.filter((t) => !t.category || t.category === 'principal')
+    const interestTxns = txns.filter((t) => t.category === 'interest')
+
+    document.getElementById('ledger-content').innerHTML = `
       <div class="card">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="font-semibold text-sm">Collateral (${collaterals.length})</h3>
+          <h3 class="font-semibold text-sm">Collateral (${colls.length})</h3>
           <button class="text-xs text-primary font-medium" id="add-collateral-btn">+ Add</button>
         </div>
         <div id="collateral-list"></div>
@@ -125,68 +174,296 @@ export async function renderPartyDetail(container, navigate, params) {
         </div>
         <div id="interest-txn-list"></div>
       </div>
-    </div>
-  `
+    `
 
-  if (party.interestRate > 0) renderInterestSummary(allTxns, party)
-  renderSourceOutstanding(allTxns, sources)
-  renderCollateralList(collaterals, party, allTxns, sources, container, navigate)
-  renderPrincipalTransactions(principalTxns, sources, party, allTxns, container, navigate)
-  renderInterestTransactions(interestTxns, sources, party, container, navigate)
+    renderCollateralList(colls, party, txns, sources, container, navigate, lid)
+    renderPrincipalTransactions(principalTxns, sources, party, txns, container, navigate, lid)
+    renderInterestTransactions(interestTxns, sources, party, container, navigate, lid)
 
-  document.getElementById('add-collateral-btn')?.addEventListener('click', () => showCollateralForm(null, party._id, collaterals, party, allTxns, sources, container, navigate))
-  document.getElementById('add-debit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, allTxns, container, navigate, 'debit'))
-  document.getElementById('add-credit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, allTxns, container, navigate, 'credit'))
-  document.getElementById('calc-interest-btn')?.addEventListener('click', () => showInterestChargeForm(party, allTxns, sources, container, navigate))
-  document.getElementById('pay-interest-btn')?.addEventListener('click', () => showInterestPaymentForm(party, allTxns, sources, container, navigate))
-}
-
-function renderInterestSummary(allTxns, party) {
-  const el = document.getElementById('interest-details')
-  const outstanding = getOutstandingForParty(allTxns)
-  const interestTxns = allTxns.filter((t) => t.category === 'interest')
-  const pendingInterest = interestTxns.reduce((s, t) => s + (t.type === 'charge' ? t.amount : -t.amount), 0)
-  const totalIncome = interestTxns
-    .filter((t) => t.type === 'payment')
-    .reduce((s, t) => s + t.amount, 0)
-
-  el.innerHTML = `
-    <div class="flex items-center justify-between py-1.5">
-      <span class="text-sm text-gray-500">Principal Outstanding</span>
-      <span class="font-mono font-semibold text-sm">${formatCurrencyFull(outstanding)}</span>
-    </div>
-    <div class="flex items-center justify-between py-1.5">
-      <span class="text-sm text-gray-500">Pending Interest</span>
-      <span class="font-mono font-semibold text-sm ${pendingInterest > 0 ? 'text-amber-600' : ''}">${formatCurrencyFull(pendingInterest)}</span>
-    </div>
-    <div class="flex items-center justify-between py-1.5 border-t border-gray-100 mt-1.5 pt-2">
-      <span class="text-sm text-gray-500">Total Interest Income</span>
-      <span class="font-mono font-semibold text-sm text-green-600">${formatCurrencyFull(totalIncome)}</span>
-    </div>
-  `
-}
-
-function renderSourceOutstanding(allTxns, sources) {
-  const el = document.getElementById('source-outstanding-list')
-  const partnerWise = getPartnerWiseOutstanding(allTxns, sources)
-  const entries = Object.entries(partnerWise)
-
-  if (entries.length === 0) {
-    el.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No partner allocations</p>'
-    return
+    document.getElementById('add-collateral-btn')?.addEventListener('click', () => showCollateralForm(null, party._id, colls, party, txns, sources, container, navigate, lid))
+    document.getElementById('add-debit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, txns, container, navigate, 'debit', lid))
+    document.getElementById('add-credit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, txns, container, navigate, 'credit', lid))
+    document.getElementById('calc-interest-btn')?.addEventListener('click', () => showInterestChargeForm(party, txns, sources, container, navigate, lid, selectedLedger))
+    document.getElementById('pay-interest-btn')?.addEventListener('click', () => showInterestPaymentForm(party, txns, sources, container, navigate, lid))
   }
 
-  el.innerHTML = entries.map(([owner, amount]) => {
-    return `
-      <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-        <span class="text-sm">${owner}</span>
-        <span class="${amount > 0 ? 'amount-negative' : 'amount-neutral'} text-sm">${formatCurrencyFull(amount)}</span>
+  function showLedgerFilter() {
+    showModal({
+      title: 'Filter Ledgers',
+      content: `
+        <div class="space-y-2">
+          ${['open', 'closed', 'defaulted'].map(s => `
+            <label class="flex items-center gap-2">
+              <input type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary ledger-filter-cb" value="${s}" ${ledgerFilter.includes(s) ? 'checked' : ''} />
+              <span class="text-sm capitalize">${s}</span>
+            </label>
+          `).join('')}
+        </div>
+      `,
+      confirmText: 'Apply',
+      onConfirm: () => {
+        const checked = Array.from(document.querySelectorAll('.ledger-filter-cb:checked')).map(cb => cb.value)
+        if (checked.length === 0) { showToast('Select at least one status', 'error'); return false }
+        ledgerFilter = checked
+        renderLedgerTabs()
+        renderLedgerContent()
+      },
+    })
+  }
+
+  function renderLedgerTabs() {
+    const el = document.getElementById('ledger-tabs')
+    const filtered = ledgers
+      .filter(l => ledgerFilter.includes(l.status))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    if (filtered.length === 0) {
+      selectedLedger = null
+      document.getElementById('ledger-content').innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">No ledgers match the current filter</div>'
+      el.innerHTML = `<div class="flex items-center gap-1 pb-1"><button class="shrink-0 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center" id="filter-ledger-btn" title="Filter Ledgers"><ion-icon name="funnel-outline" class="text-sm"></ion-icon></button><div class="flex-1"></div><button class="shrink-0 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center text-lg font-light leading-none" id="add-ledger-btn" title="Add Ledger">+</button></div>`
+      document.getElementById('filter-ledger-btn')?.addEventListener('click', showLedgerFilter)
+      document.getElementById('add-ledger-btn')?.addEventListener('click', showCreateLedgerForm)
+      return
+    }
+    if (!filtered.find(l => l._id === selectedLedger?._id)) {
+      selectedLedger = filtered[0]
+    }
+    el.innerHTML = `
+      <div class="flex items-center gap-1 pb-1">
+        <button class="shrink-0 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center" id="filter-ledger-btn" title="Filter Ledgers">
+          <ion-icon name="funnel-outline" class="text-sm"></ion-icon>
+        </button>
+        <div class="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1">
+          ${filtered.map((l) => {
+            const active = l._id === selectedLedger._id
+            const statusDot = l.status === 'open' ? 'bg-green-500' : l.status === 'closed' ? 'bg-gray-400' : 'bg-red-500'
+            return `
+              <button class="ledger-tab flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                active ? 'bg-primary text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }" data-id="${l._id}">
+                <span class="w-1.5 h-1.5 rounded-full ${statusDot}"></span>
+                ${escHtml(l.name)}
+                <span class="text-[10px] opacity-70">${l.interestRate}%</span>
+                <ion-icon name="chevron-down-outline" class="text-xs ml-0.5 ledger-more" data-id="${l._id}"></ion-icon>
+              </button>
+            `
+          }).join('')}
+        </div>
+        <button class="shrink-0 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center text-lg font-light leading-none" id="add-ledger-btn" title="Add Ledger">+</button>
       </div>
     `
-  }).join('')
+
+    el.querySelectorAll('.ledger-tab').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        if (e.target.closest('.ledger-more')) return
+        const id = btn.dataset.id
+        if (id !== selectedLedger._id) {
+          selectedLedger = ledgers.find((l) => l._id === id)
+          renderLedgerTabs()
+          renderLedgerContent()
+        }
+      })
+    })
+
+    el.querySelectorAll('.ledger-more').forEach((icon) => {
+      icon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        showLedgerMenu(ledgers.find((l) => l._id === icon.dataset.id))
+      })
+    })
+
+    document.getElementById('add-ledger-btn')?.addEventListener('click', showCreateLedgerForm)
+    document.getElementById('filter-ledger-btn')?.addEventListener('click', showLedgerFilter)
+  }
+
+  async function showCreateLedgerForm() {
+    const result = await showModal({
+      title: 'New Ledger',
+      content: `
+        <div class="space-y-3">
+          <div>
+            <label class="input-label">Ledger Name *</label>
+            <input class="input" id="lg-name" placeholder="e.g. Loan #1, Personal Loan" />
+          </div>
+          <div>
+            <label class="input-label">Interest Rate (% per month)</label>
+            <input class="input" id="lg-rate" type="number" step="0.1" value="0" />
+          </div>
+          <div>
+            <label class="input-label">Status</label>
+            <select class="input" id="lg-status">
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+              <option value="defaulted">Defaulted</option>
+            </select>
+          </div>
+          <div>
+            <label class="input-label">Notes</label>
+            <textarea class="input" id="lg-notes" rows="2"></textarea>
+          </div>
+        </div>
+      `,
+      confirmText: 'Create',
+      onConfirm: () => {
+        const name = document.getElementById('lg-name')?.value.trim()
+        if (!name) { showToast('Ledger name is required', 'error'); return false }
+        return {
+          partyId: party._id,
+          name,
+          interestRate: parseFloat(document.getElementById('lg-rate')?.value) || 0,
+          status: document.getElementById('lg-status')?.value || 'open',
+          notes: document.getElementById('lg-notes')?.value.trim() || '',
+        }
+      },
+    })
+
+    if (!result || result === true) return
+    await saveLedger(result)
+    logAction('create', 'ledger', party._id, `Created ledger: ${result.name}`)
+    showToast('Ledger created')
+    renderPartyDetail(container, navigate, { id: party._id })
+  }
+
+  async function showLedgerMenu(ledger) {
+    showModal({
+      title: escHtml(ledger.name),
+      content: `
+        <div class="space-y-1">
+          <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm flex items-center gap-3" id="ledger-edit"><ion-icon name="create-outline" class="text-gray-400"></ion-icon> Edit Ledger</button>
+          <button class="w-full text-left px-3 py-2.5 rounded-lg hover:bg-red-50 text-sm flex items-center gap-3 text-red-500" id="ledger-delete"><ion-icon name="trash-outline"></ion-icon> Delete Ledger</button>
+        </div>
+      `,
+      confirmText: 'Close',
+      showCancel: false,
+    })
+
+    document.getElementById('ledger-edit')?.addEventListener('click', () => {
+      document.querySelector('[data-dismiss]')?.click()
+      showEditLedgerForm(ledger)
+    })
+
+    document.getElementById('ledger-delete')?.addEventListener('click', () => {
+      document.querySelector('[data-dismiss]')?.click()
+      deleteLedgerWithCascade(ledger)
+    })
+  }
+
+  async function showEditLedgerForm(ledger) {
+    const result = await showModal({
+      title: 'Edit Ledger',
+      content: `
+        <div class="space-y-3">
+          <div>
+            <label class="input-label">Ledger Name *</label>
+            <input class="input" id="lg-edit-name" value="${escHtml(ledger.name)}" />
+          </div>
+          <div>
+            <label class="input-label">Interest Rate (% per month)</label>
+            <input class="input" id="lg-edit-rate" type="number" step="0.1" value="${ledger.interestRate}" />
+          </div>
+          <div>
+            <label class="input-label">Status</label>
+            <select class="input" id="lg-edit-status">
+              ${['open', 'closed', 'defaulted'].map((s) =>
+                `<option value="${s}" ${ledger.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="input-label">Notes</label>
+            <textarea class="input" id="lg-edit-notes" rows="2">${escHtml(ledger.notes || '')}</textarea>
+          </div>
+        </div>
+      `,
+      confirmText: 'Update',
+      onConfirm: () => {
+        const name = document.getElementById('lg-edit-name')?.value.trim()
+        if (!name) { showToast('Ledger name is required', 'error'); return false }
+        return {
+          ...ledger,
+          name,
+          interestRate: parseFloat(document.getElementById('lg-edit-rate')?.value) || 0,
+          status: document.getElementById('lg-edit-status')?.value || 'open',
+          notes: document.getElementById('lg-edit-notes')?.value.trim() || '',
+          updatedAt: new Date().toISOString(),
+        }
+      },
+    })
+
+    if (!result || result === true) return
+    await saveLedger(result)
+    logAction('update', 'ledger', ledger._id, `Updated ledger: ${result.name}`)
+    showToast('Ledger updated')
+    renderPartyDetail(container, navigate, { id: party._id })
+  }
+
+  async function deleteLedgerWithCascade(ledger) {
+    if (ledgers.length <= 1) {
+      showToast('Cannot delete the only ledger', 'error')
+      return
+    }
+    const txns = getLedgerTxns(ledger._id)
+    const colls = getLedgerCollaterals(ledger._id)
+    const txnCount = txns.length
+    const collCount = colls.length
+    const confirmed = await showConfirm({
+      title: 'Delete Ledger?',
+      message: `This will permanently delete "${ledger.name}" and all its data (${txnCount} transactions, ${collCount} collateral items).`,
+      confirmText: 'Delete',
+      danger: true,
+    })
+    if (!confirmed) return
+    for (const t of txns) await deleteTransaction(t._id)
+    for (const c of colls) await deleteCollateral(c._id)
+    await deleteLedger(ledger._id)
+    logAction('delete', 'ledger', ledger._id, `Deleted ledger: ${ledger.name} with ${txnCount} txns, ${collCount} colls`)
+    showToast('Ledger deleted')
+    renderPartyDetail(container, navigate, { id: party._id })
+  }
+
+  renderHeader(party.name, {
+    onBack: () => navigate('parties'),
+    rightAction: `<button class="btn-ghost btn-icon" id="party-menu"><ion-icon name="ellipsis-vertical-outline" class="text-xl"></ion-icon></button>`,
+  })
+
+  document.getElementById('party-menu')?.addEventListener('click', () => showPartyMenu(party, allTxns, sources, container, navigate))
+
+  container.innerHTML = `
+    <div class="space-y-4 slide-up">
+      <div class="card-flat">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-12 h-12 rounded-full bg-gradient-to-br from-primary/10 to-vibgyor-violet/10 flex items-center justify-center text-primary font-bold text-lg shrink-0">
+            ${(party.name || '?').charAt(0).toUpperCase()}
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <span class="font-bold">${party.name}</span>
+              <span class="${accountStatusColor(party.status)}">${party.status}</span>
+            </div>
+            ${party.phone ? `<div class="text-xs text-gray-400 flex items-center gap-1 mt-0.5"><ion-icon name="call-outline" class="text-sm"></ion-icon>${party.phone}</div>` : ''}
+          </div>
+        </div>
+        ${party.address ? `<p class="text-xs text-gray-400 flex items-start gap-1"><ion-icon name="location-outline" class="text-sm mt-0.5 shrink-0"></ion-icon>${escHtml(party.address)}</p>` : ''}
+        ${party.notes ? `<p class="text-xs text-gray-500 mt-1">${escHtml(party.notes)}</p>` : ''}
+      </div>
+
+      <div id="common-summary"></div>
+      <div id="common-interest-summary" class="hidden"></div>
+      <div id="common-source-outstanding" class="hidden"></div>
+
+      <div id="ledger-tabs"></div>
+
+      <div id="ledger-content"></div>
+    </div>
+  `
+
+  renderCommonSummary()
+  renderCommonInterestSummary()
+  renderCommonSourceOutstanding()
+  renderLedgerTabs()
+  renderLedgerContent()
 }
 
-function renderCollateralList(collaterals, party, allTxns, sources, container, navigate) {
+function renderCollateralList(collaterals, party, allTxns, sources, container, navigate, ledgerId) {
   const el = document.getElementById('collateral-list')
   if (collaterals.length === 0) {
     el.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No collateral items</p>'
@@ -239,12 +516,12 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
   el.querySelectorAll('.edit-collateral').forEach((btn) => {
     btn.addEventListener('click', () => {
       const col = collaterals.find((c) => c._id === btn.dataset.id)
-      if (col) showCollateralForm(col, party._id, collaterals, party, allTxns, sources, container, navigate)
+      if (col) showCollateralForm(col, party._id, collaterals, party, allTxns, sources, container, navigate, ledgerId)
     })
   })
 }
 
-function renderPrincipalTransactions(txns, sources, party, allTxns, container, navigate) {
+function renderPrincipalTransactions(txns, sources, party, allTxns, container, navigate, ledgerId) {
   const el = document.getElementById('principal-txn-list')
   if (txns.length === 0) {
     el.innerHTML = '<div class="empty-state"><ion-icon name="receipt-outline"></ion-icon><p class="text-xs text-gray-400">No principal transactions yet</p></div>'
@@ -319,12 +596,12 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
   el.querySelectorAll('.edit-principal-txn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const txn = allTxns.find((t) => t._id === btn.dataset.id)
-      if (txn) showTransactionForm(txn, party, sources, allTxns, container, navigate)
+      if (txn) showTransactionForm(txn, party, sources, allTxns, container, navigate, null, ledgerId)
     })
   })
 }
 
-function renderInterestTransactions(txns, sources, party, container, navigate) {
+function renderInterestTransactions(txns, sources, party, container, navigate, ledgerId) {
   const el = document.getElementById('interest-txn-list')
   if (txns.length === 0) {
     el.innerHTML = '<div class="empty-state"><ion-icon name="calculator-outline"></ion-icon><p class="text-xs text-gray-400">No interest transactions yet</p></div>'
@@ -458,7 +735,7 @@ function renderInterestTransactions(txns, sources, party, container, navigate) {
   })
 }
 
-async function showTransactionForm(editTxn, party, sources, allTxns, container, navigate, presetType) {
+async function showTransactionForm(editTxn, party, sources, allTxns, container, navigate, presetType, ledgerId) {
   const isEdit = !!editTxn
   const txnType = isEdit ? editTxn.type : presetType
   const activeSources = sources.filter((s) => s.status !== 'inactive')
@@ -575,6 +852,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
 
       return {
         partyId: party._id,
+        ledgerId,
         category: 'principal',
         type: txnType,
         amount,
@@ -591,7 +869,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
 
   if (isEdit) {
     result._id = editTxn._id
-    const interestCharges = allTxns.filter((t) => t.category === 'interest' && t.type === 'charge' && t.partyId === party._id)
+    const interestCharges = allTxns.filter((t) => t.category === 'interest' && t.type === 'charge' && t.partyId === party._id && t.ledgerId === ledgerId)
     if (interestCharges.length > 0) {
       const confirmed = await showConfirm({
         title: 'Interest May Be Affected',
@@ -613,7 +891,7 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
   renderPartyDetail(container, navigate, { id: party._id })
 }
 
-async function showInterestChargeForm(party, allTxns, sources, container, navigate) {
+async function showInterestChargeForm(party, allTxns, sources, container, navigate, ledgerId, ledger) {
   const lastChargeDate = getLastInterestChargeDate(allTxns)
   const firstPrincipalDate = getFirstPrincipalDate(allTxns)
 
@@ -631,7 +909,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
         <label class="input-label">Calculate Interest Up To</label>
         ${dateInputHTML({id: 'calc-to-date', value: today})}
       </div>
-      <p class="text-xs text-gray-400">Interest will be calculated from <strong>${fromDate}</strong> to the selected date.</p>
+      <p class="text-xs text-gray-400">Interest will be calculated from <strong>${fromDate}</strong> to the selected date at <strong>${ledger.interestRate}%/mo</strong>.</p>
       ${!fromDate ? '<p class="text-xs text-amber-600">No starting date available.</p>' : ''}
     </div>
   `
@@ -651,14 +929,14 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
 
       const charges = calculateMonthlyCharges({
         transactions: allTxns,
-        rate: party.interestRate,
+        rate: ledger.interestRate,
         fromDate,
         toDate,
       })
 
       if (charges.length === 0) {
-        if (!party.interestRate || party.interestRate <= 0) {
-          showToast('Interest rate is 0%. Set an interest rate for this party.', 'error')
+        if (!ledger.interestRate || ledger.interestRate <= 0) {
+          showToast('Interest rate is 0%. Set an interest rate for this ledger.', 'error')
         } else {
           showToast('No interest accrued in this period', 'error')
         }
@@ -676,6 +954,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
   const totalInterest = charges.reduce((s, c) => s + c.amount, 0)
   const data = {
     partyId: party._id,
+    ledgerId,
     category: 'interest',
     type: 'charge',
     amount: Math.round(totalInterest * 100) / 100,
@@ -691,7 +970,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
   renderPartyDetail(container, navigate, { id: party._id })
 }
 
-async function showInterestPaymentForm(party, allTxns, sources, container, navigate) {
+async function showInterestPaymentForm(party, allTxns, sources, container, navigate, ledgerId) {
   const content = `
     <div class="space-y-3">
       <div>
@@ -721,6 +1000,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
       if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
       return {
         partyId: party._id,
+        ledgerId,
         category: 'interest',
         type: 'payment',
         amount,
@@ -739,7 +1019,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
   renderPartyDetail(container, navigate, { id: party._id })
 }
 
-async function showCollateralForm(editCollateral, partyId, collaterals, party, allTxns, sources, container, navigate) {
+async function showCollateralForm(editCollateral, partyId, collaterals, party, allTxns, sources, container, navigate, ledgerId) {
   const isEdit = !!editCollateral
   let imageData = editCollateral?.image || ''
   let selectedFile = null
@@ -823,6 +1103,7 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
       if (!desc) { showToast('Description is required', 'error'); return false }
       const result = {
         partyId,
+        ledgerId,
         type: document.getElementById('col-type')?.value || 'other',
         description: desc,
         serialNumber: document.getElementById('col-serial')?.value.trim() || '',
@@ -871,6 +1152,7 @@ function showPartyMenu(party, allTxns, sources, container, navigate) {
     if (confirmed) {
       for (const t of allTxns) await deleteTransaction(t._id)
       for (const c of await getCollaterals(party._id)) await deleteCollateral(c._id)
+      for (const l of await getLedgers(party._id)) await deleteLedger(l._id)
       await deleteParty(party._id)
       logAction('delete', 'party', party._id, 'Deleted party')
       showToast('Party deleted')
@@ -917,10 +1199,6 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
         </div>
       </div>
       <div>
-        <label class="input-label">Interest Rate (%/mo)</label>
-        <input class="input" id="pf-rate" type="number" step="0.1" value="${party?.interestRate || '0'}" />
-      </div>
-      <div>
         <label class="input-label">Notes</label>
         <textarea class="input" id="pf-notes" rows="3">${escHtml(party?.notes || '')}</textarea>
       </div>
@@ -942,7 +1220,6 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
         identity: document.getElementById('pf-identity')?.value.trim() || '',
         riskCategory: document.getElementById('pf-risk')?.value || 'low',
         status: document.getElementById('pf-status')?.value || 'active',
-        interestRate: parseFloat(document.getElementById('pf-rate')?.value) || 0,
         notes: document.getElementById('pf-notes')?.value.trim() || '',
         updatedAt: new Date().toISOString(),
       }

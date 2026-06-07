@@ -111,7 +111,7 @@ export async function renderSettings(container, navigate) {
           <button class="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50" id="force-update">
             <ion-icon name="refresh-outline" class="text-gray-400 text-lg"></ion-icon>
             <div class="text-left">
-              <div class="text-sm font-medium">Force Update</div>
+              <div class="text-sm font-medium">Update App</div>
               <div class="text-xs text-gray-400">Check and apply latest app update</div>
             </div>
           </button>
