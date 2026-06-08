@@ -137,7 +137,9 @@ window.forceSWUpdate = async function () {
     const reg = await navigator.serviceWorker.getRegistration()
     if (reg) await reg.unregister()
   }
-  setTimeout(() => location.reload(), 300)
+  // Cache-bust the page URL only (not sw.js) so index.html is fetched fresh
+  const base = location.href.split('?')[0].split('#')[0]
+  setTimeout(() => { location.href = base + '?_t=' + Date.now() }, 300)
 }
 
 document.addEventListener('DOMContentLoaded', init)
