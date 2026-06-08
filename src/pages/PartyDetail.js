@@ -977,11 +977,11 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
     <div>
       <label class="input-label">Money Source Allocation</label>
       <div class="space-y-2" id="pay-source-allocs">
-        ${activeSources.map((s) => `
+        ${activeSources.map((s, i) => `
           <div class="flex items-center gap-2">
-            <input type="checkbox" id="pay-alloc-src-${s._id}" class="rounded border-gray-300 text-primary focus:ring-primary pay-src-check" data-id="${s._id}" checked />
+            <input type="checkbox" id="pay-alloc-src-${s._id}" class="rounded border-gray-300 text-primary focus:ring-primary pay-src-check" data-id="${s._id}" ${i === 0 ? 'checked' : ''} />
             <label for="pay-alloc-src-${s._id}" class="text-sm flex-1">${s.name}</label>
-            <input type="number" step="0.01" class="input w-28 text-sm pay-alloc-amount" data-id="${s._id}" placeholder="Amount" />
+            <input type="number" step="0.01" class="input w-28 text-sm pay-alloc-amount" data-id="${s._id}" placeholder="Amount" ${i === 0 ? '' : 'disabled'} />
           </div>
         `).join('')}
       </div>
