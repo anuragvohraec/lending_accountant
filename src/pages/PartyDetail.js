@@ -1,4 +1,4 @@
-import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers } from '../db/database.js'
+import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers, saveSourceTransaction } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
 import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getPartnerWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
@@ -971,11 +971,30 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
 }
 
 async function showInterestPaymentForm(party, allTxns, sources, container, navigate, ledgerId) {
+  const activeSources = sources.filter((s) => s.status !== 'inactive')
+
+  const sourceAllocHtml = activeSources.length > 0 ? `
+    <div>
+      <label class="input-label">Money Source Allocation</label>
+      <div class="space-y-2" id="pay-source-allocs">
+        ${activeSources.map((s) => `
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="pay-alloc-src-${s._id}" class="rounded border-gray-300 text-primary focus:ring-primary pay-src-check" data-id="${s._id}" checked />
+            <label for="pay-alloc-src-${s._id}" class="text-sm flex-1">${s.name}</label>
+            <input type="number" step="0.01" class="input w-28 text-sm pay-alloc-amount" data-id="${s._id}" placeholder="Amount" />
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : ''
+
   const content = `
     <div class="space-y-3">
+      ${sourceAllocHtml}
       <div>
         <label class="input-label">Amount *</label>
-        <input class="input" id="pay-amount" type="number" step="0.01" placeholder="0.00" />
+        <input class="input" id="pay-amount" type="number" step="0.01" placeholder="0.00" ${activeSources.length > 0 ? 'readonly' : ''} />
+        <p class="text-xs text-gray-400 mt-1" id="pay-amount-hint">${activeSources.length > 0 ? 'Auto-calculated from source allocation sums. Edit manually to override and clear allocations.' : ''}</p>
       </div>
       <div>
         <label class="input-label">Date</label>
@@ -994,10 +1013,61 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
     confirmText: 'Record',
     onMounted: () => {
       setupDateInput('pay-date')
+      const allocs = document.getElementById('pay-source-allocs')
+      if (!allocs) return
+
+      function updateAmountFromAllocs() {
+        let sum = 0
+        document.querySelectorAll('.pay-alloc-amount:not([disabled])').forEach((inp) => {
+          sum += parseFloat(inp.value) || 0
+        })
+        const amountInput = document.getElementById('pay-amount')
+        if (amountInput) amountInput.value = sum > 0 ? sum.toFixed(2) : ''
+      }
+
+      function enableAutoAmount() {
+        const a = document.getElementById('pay-amount')
+        if (a && !a.hasAttribute('readonly')) a.setAttribute('readonly', '')
+        updateAmountFromAllocs()
+      }
+
+      allocs.addEventListener('input', (e) => {
+        if (e.target.classList.contains('pay-alloc-amount')) enableAutoAmount()
+      })
+
+      allocs.addEventListener('change', (e) => {
+        if (e.target.classList.contains('pay-src-check')) {
+          const input = document.querySelector(`.pay-alloc-amount[data-id="${e.target.dataset.id}"]`)
+          if (input) {
+            input.disabled = !e.target.checked
+            if (!e.target.checked) input.value = ''
+          }
+          enableAutoAmount()
+        }
+      })
+
+      document.getElementById('pay-amount')?.addEventListener('focus', function () {
+        if (!this.hasAttribute('readonly')) return
+        this.removeAttribute('readonly')
+        document.querySelectorAll('.pay-src-check:checked').forEach((cb) => {
+          cb.checked = false
+          const inp = document.querySelector(`.pay-alloc-amount[data-id="${cb.dataset.id}"]`)
+          if (inp) { inp.disabled = true; inp.value = '' }
+        })
+        document.getElementById('pay-amount-hint')?.classList.add('hidden')
+      })
     },
     onConfirm: () => {
       const amount = parseFloat(document.getElementById('pay-amount')?.value)
       if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
+
+      const sourceAllocations = []
+      document.querySelectorAll('.pay-src-check:checked').forEach((cb) => {
+        const input = document.querySelector(`.pay-alloc-amount[data-id="${cb.dataset.id}"]`)
+        const val = parseFloat(input?.value) || 0
+        if (val > 0) sourceAllocations.push({ sourceId: cb.dataset.id, amount: val })
+      })
+
       return {
         partyId: party._id,
         ledgerId,
@@ -1006,6 +1076,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
         amount,
         date: getDateInputValue('pay-date') || new Date().toISOString(),
         notes: document.getElementById('pay-notes')?.value.trim() || 'Interest payment',
+        sourceAllocations: sourceAllocations.length > 0 ? sourceAllocations : undefined,
         updatedAt: new Date().toISOString(),
       }
     },
@@ -1014,6 +1085,19 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
   if (!result || result === true) return
 
   await saveTransaction(result)
+  const srcAllocs = result.sourceAllocations || []
+  if (srcAllocs.length > 0) {
+    const paymentDate = result.date
+    for (const alloc of srcAllocs) {
+      await saveSourceTransaction({
+        sourceId: alloc.sourceId,
+        type: 'credit',
+        amount: alloc.amount,
+        date: paymentDate,
+        description: `Interest payment from ${party.name}`,
+      })
+    }
+  }
   logAction('create', 'transaction', result._id || '', `Recorded interest payment of ${result.amount}`)
   showToast('Interest payment recorded')
   renderPartyDetail(container, navigate, { id: party._id })
