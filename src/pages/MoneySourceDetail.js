@@ -288,6 +288,9 @@ function renderLedger() {
   })
 }
 
+function fmt(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
 function getFinancialYearRange() {
   const now = new Date()
   const y = now.getFullYear()
@@ -295,8 +298,8 @@ function getFinancialYearRange() {
   const start = now < aprStart ? new Date(y - 1, 3, 1) : aprStart
   const end = now < aprStart ? new Date(y, 2, 31) : new Date(y + 1, 2, 31)
   return {
-    from: start.toISOString().split('T')[0],
-    to: end.toISOString().split('T')[0],
+    from: fmt(start),
+    to: fmt(end),
     label: `${start.getFullYear()}-${end.getFullYear()}`
   }
 }
@@ -304,7 +307,7 @@ function getFinancialYearRange() {
 function monthsAgo(n) {
   const d = new Date()
   d.setMonth(d.getMonth() - n)
-  return d.toISOString().split('T')[0]
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
 async function showReportForm(sourceId, navigate) {
