@@ -3,6 +3,7 @@ import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/fo
 import { getOutstandingForParty, getPendingInterestByParty } from '../services/interest.js'
 import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
 import { generateTaxReport, renderTaxReportOverlay } from './TaxReport.js'
+import { generatePartnerTransferReport, renderPartnerTransferReportOverlay } from './PartnerTransferReport.js'
 import { renderHeader } from '../components/Header.js'
 import { showSkeleton } from '../components/Loading.js'
 import { showModal } from '../components/Modal.js'
@@ -46,6 +47,7 @@ export async function renderDashboard(container) {
         <div class="flex flex-wrap gap-2">
           <button class="btn-outline btn-sm" id="report-btn-interest"><ion-icon name="document-text-outline" class="text-sm mr-1"></ion-icon>Interest Collection Report</button>
           <button class="btn-outline btn-sm" id="report-btn-tax"><ion-icon name="calculator-outline" class="text-sm mr-1"></ion-icon>Tax Calculation Report</button>
+          <button class="btn-outline btn-sm" id="report-btn-partner-transfer"><ion-icon name="git-network-outline" class="text-sm mr-1"></ion-icon>Partner Transfer Report</button>
         </div>
       </div>
       <div id="dash-recent" class="card">
@@ -284,6 +286,63 @@ export async function renderDashboard(container) {
     })
     if (data.rows.length === 0) { showToast('No data for selected criteria', 'error'); return }
     renderTaxReportOverlay(data)
+  })
+
+  document.getElementById('report-btn-partner-transfer')?.addEventListener('click', async () => {
+    const today = new Date().toISOString().split('T')[0]
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+    const fy = getFinancialYearRange()
+
+    const content = `
+      <div class="space-y-3">
+        <div>
+          <label class="input-label">Date Range</label>
+          <div class="flex items-center gap-2">
+            ${dateInputHTML({id: 'ptr-from', value: sixMonthsAgo.toISOString().split('T')[0], cls: 'flex-1'})}
+            <span class="text-xs text-gray-400">to</span>
+            ${dateInputHTML({id: 'ptr-to', value: today, cls: 'flex-1'})}
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 ptr-quick-range" data-from="${fy.from}" data-to="${fy.to}">FY ${fy.label}</button>
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 ptr-quick-range" data-from="${sixMonthsAgo.toISOString().split('T')[0]}" data-to="${today}">Last 6 months</button>
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 ptr-quick-range" data-from="${new Date(new Date().setMonth(new Date().getMonth() - 3)).toISOString().split('T')[0]}" data-to="${today}">Last 3 months</button>
+          <button class="text-xs py-1 px-2.5 rounded-full border border-gray-200 ptr-quick-range" data-from="" data-to="">All Time</button>
+        </div>
+      </div>
+    `
+
+    const result = await showModal({
+      title: 'Partner Transfer Report',
+      content,
+      confirmText: 'Generate',
+      onMounted: () => {
+        setupDateInput('ptr-from')
+        setupDateInput('ptr-to')
+        document.querySelectorAll('.ptr-quick-range').forEach(btn => {
+          btn.addEventListener('click', () => {
+            setDateInputValue('ptr-from', btn.dataset.from)
+            setDateInputValue('ptr-to', btn.dataset.to)
+          })
+        })
+      },
+      onConfirm: () => {
+        const fromDate = getDateInputValue('ptr-from')
+        const toDate = getDateInputValue('ptr-to')
+        if (!fromDate || !toDate) { showToast('Select date range', 'error'); return false }
+        return { fromDate, toDate }
+      },
+    })
+
+    if (!result || result === true) return
+    const data = generatePartnerTransferReport({
+      fromDate: result.fromDate,
+      toDate: result.toDate,
+      allSourceTxns: allSrcTxns,
+      allSources: sources,
+    })
+    renderPartnerTransferReportOverlay(data)
   })
 }
 

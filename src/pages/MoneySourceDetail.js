@@ -1,4 +1,4 @@
-import { getMoneySource, saveMoneySource, getAllTransactions, getSourceTransactions, saveSourceTransaction, deleteSourceTransaction, getParties } from '../db/database.js'
+import { getMoneySource, saveMoneySource, getAllTransactions, getSourceTransactions, saveSourceTransaction, deleteSourceTransaction, getParties, getMoneySources, saveSourceTransfer } from '../db/database.js'
 import { formatCurrency, formatCurrencyPrecise, formatDate, sourceTypeIcon } from '../utils/formatters.js'
 import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
 import { renderHeader } from '../components/Header.js'
@@ -6,6 +6,7 @@ import { showModal, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
+import { escHtml } from '../utils/helpers.js'
 
 let _source, _allTxns, _sourceTxns, _allParties, _container, _navigate, _params
 
@@ -63,6 +64,7 @@ export async function renderMoneySourceDetail(container, navigate, params) {
       <div class="flex items-center justify-between mb-2.5">
         <h3 class="font-bold text-sm">Ledger</h3>
         <div class="flex gap-2">
+          <button class="btn-outline btn-sm" id="transfer-btn"><ion-icon name="swap-horizontal-outline" class="text-sm"></ion-icon></button>
           <button class="btn-outline btn-sm" id="filter-ledger"><ion-icon name="funnel-outline" class="text-sm"></ion-icon></button>
           <button class="btn-outline btn-sm" id="report-ledger"><ion-icon name="download-outline" class="text-sm"></ion-icon></button>
         </div>
@@ -82,6 +84,7 @@ export async function renderMoneySourceDetail(container, navigate, params) {
 
   document.getElementById('add-debit-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate, 'debit'))
   document.getElementById('add-credit-entry').addEventListener('click', () => showSourceTxnForm(source._id, container, navigate, 'credit'))
+  document.getElementById('transfer-btn').addEventListener('click', () => showSourceTransferForm(source._id, container, navigate))
   document.getElementById('report-ledger').addEventListener('click', () => showReportForm(source._id, navigate))
   document.getElementById('filter-ledger').addEventListener('click', () => {
     document.getElementById('ledger-filters').classList.toggle('hidden')
@@ -476,4 +479,88 @@ async function showSourceTxnForm(sourceId, container, navigate, presetType) {
   _source = _src; _allTxns = _all; _sourceTxns = _srcTxns; _allParties = _parties
   _page = 1
   renderLedger()
+}
+
+async function showSourceTransferForm(sourceId, container, navigate) {
+  const allSources = await getMoneySources()
+  const activeSources = allSources.filter((s) => s.status !== 'inactive')
+  const currentSource = allSources.find((s) => s._id === sourceId)
+
+  const toOpts = activeSources.map((s) =>
+    `<option value="${s._id}" ${s._id === sourceId ? 'disabled' : ''}>${escHtml(s.name)}${s.owner ? ' (' + escHtml(s.owner) + ')' : ''}</option>`
+  ).join('')
+
+  const content = `
+    <div class="space-y-3">
+      <p class="text-sm font-semibold text-gray-600">From: ${escHtml(currentSource?.name || '')}</p>
+      <div>
+        <label class="input-label">Select Target Source *</label>
+        <select class="input" id="stf-to">
+          <option value="">-- Select --</option>
+          ${toOpts}
+        </select>
+      </div>
+      <div>
+        <label class="input-label">Amount *</label>
+        <input class="input" id="stf-amount" type="number" step="0.01" placeholder="0.00" />
+      </div>
+      <div>
+        <label class="input-label">Date *</label>
+        ${dateInputHTML({id: 'stf-date', value: new Date().toISOString().split('T')[0]})}
+      </div>
+      <div>
+        <label class="input-label">Notes</label>
+        <textarea class="input" id="stf-notes" rows="2" placeholder="Optional reference"></textarea>
+      </div>
+    </div>
+  `
+
+  const result = await showModal({
+    title: 'Transfer Money',
+    content,
+    confirmText: 'Transfer',
+    onMounted: () => {
+      setupDateInput('stf-date')
+    },
+    onConfirm: () => {
+      const toId = document.getElementById('stf-to')?.value
+      const amount = parseFloat(document.getElementById('stf-amount')?.value)
+      const date = getDateInputValue('stf-date')
+      const notes = document.getElementById('stf-notes')?.value.trim() || ''
+
+      if (!toId) { showToast('Select target source', 'error'); return false }
+      if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
+      if (!date) { showToast('Select date', 'error'); return false }
+
+      const toSrc = allSources.find((s) => s._id === toId)
+
+      return {
+        fromSourceId: sourceId,
+        toSourceId: toId,
+        amount,
+        date,
+        notes,
+        sourceNames: { from: currentSource?.name || '', to: toSrc?.name || '' },
+      }
+    },
+  })
+
+  if (!result || result === true) return
+
+  try {
+    await saveSourceTransfer(result)
+    logAction('create', 'source_transfer', '', `Transferred ${result.amount} from ${result.sourceNames.from} to ${result.sourceNames.to}`)
+    showToast('Transfer recorded')
+    const [_src, _all, _srcTxns, _parties] = await Promise.all([
+      getMoneySource(sourceId),
+      getAllTransactions(),
+      getSourceTransactions(sourceId),
+      getParties(),
+    ])
+    _source = _src; _allTxns = _all; _sourceTxns = _srcTxns; _allParties = _parties
+    _page = 1
+    renderLedger()
+  } catch (err) {
+    showToast('Error recording transfer: ' + err.message, 'error')
+  }
 }

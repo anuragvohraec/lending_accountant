@@ -1,5 +1,6 @@
-import { getMoneySources, saveMoneySource, deleteMoneySource, getAllTransactions, getAllSourceTransactions, addAuditLog } from '../db/database.js'
+import { getMoneySources, saveMoneySource, deleteMoneySource, getAllTransactions, getAllSourceTransactions, addAuditLog, saveSourceTransfer } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, sourceTypeIcon } from '../utils/formatters.js'
+import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -9,7 +10,16 @@ import { moneyIllustration, decorativeBg } from '../assets/vectors.js'
 import { escHtml } from '../utils/helpers.js'
 
 export async function renderMoneySources(container, navigate) {
-  renderHeader('Money Sources')
+  renderHeader('Money Sources', {
+    rightAction: `<div class="relative" id="source-menu-wrap">
+      <button class="btn-ghost btn-icon" id="source-menu-btn"><ion-icon name="ellipsis-vertical-outline" class="text-xl"></ion-icon></button>
+      <div id="source-dropdown" class="hidden absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 min-w-[170px]">
+        <button class="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2" id="source-transfer-btn">
+          <ion-icon name="swap-horizontal-outline" class="text-base text-gray-500"></ion-icon> Transfer Money
+        </button>
+      </div>
+    </div>`
+  })
 
   window.__sourceForm = () => showSourceForm(null, [], [], container)
 
@@ -40,7 +50,129 @@ export async function renderMoneySources(container, navigate) {
 
   renderSourceList(container, sources, allTxns, balances, navigate)
 
+  setupHeaderMenu(sources, container, navigate)
+
   window.__sourceForm = () => showSourceForm(null, sources, allTxns, container)
+}
+
+function setupHeaderMenu(sources, container, navigate) {
+  const menuBtn = document.getElementById('source-menu-btn')
+  const dropdown = document.getElementById('source-dropdown')
+  if (!menuBtn || !dropdown) return
+
+  function toggleMenu(e) {
+    e.stopPropagation()
+    dropdown.classList.toggle('hidden')
+  }
+
+  menuBtn.addEventListener('click', toggleMenu)
+
+  document.addEventListener('click', (e) => {
+    if (!dropdown.classList.contains('hidden') && !menuBtn.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.add('hidden')
+    }
+  })
+
+  document.getElementById('source-transfer-btn')?.addEventListener('click', async () => {
+    dropdown.classList.add('hidden')
+    showTransferForm(sources, null, container, navigate)
+  })
+}
+
+async function showTransferForm(sources, presetSourceId, container, navigate) {
+  const fromSources = sources.filter((s) => s.status !== 'inactive')
+  const presetSource = presetSourceId ? sources.find((s) => s._id === presetSourceId) : null
+
+  const fromOpts = fromSources.map((s) =>
+    `<option value="${s._id}" ${presetSourceId === s._id ? 'selected' : ''}>${escHtml(s.name)}${s.owner ? ' (' + escHtml(s.owner) + ')' : ''}</option>`
+  ).join('')
+
+  const toOpts = fromSources.map((s) =>
+    `<option value="${s._id}" ${presetSourceId !== s._id ? '' : 'disabled'}>${escHtml(s.name)}${s.owner ? ' (' + escHtml(s.owner) + ')' : ''}</option>`
+  ).join('')
+
+  const content = `
+    <div class="space-y-3">
+      ${presetSource ? `<p class="text-sm font-semibold text-gray-600">From: ${escHtml(presetSource.name)}</p>` : `
+      <div>
+        <label class="input-label">From Source *</label>
+        <select class="input" id="tf-from">${fromOpts}</select>
+      </div>`}
+      <div>
+        <label class="input-label">To Source *</label>
+        <select class="input" id="tf-to">${toOpts}</select>
+      </div>
+      <div>
+        <label class="input-label">Amount *</label>
+        <input class="input" id="tf-amount" type="number" step="0.01" placeholder="0.00" />
+      </div>
+      <div>
+        <label class="input-label">Date *</label>
+        ${dateInputHTML({id: 'tf-date', value: new Date().toISOString().split('T')[0]})}
+      </div>
+      <div>
+        <label class="input-label">Notes</label>
+        <textarea class="input" id="tf-notes" rows="2" placeholder="Optional reference"></textarea>
+      </div>
+    </div>
+  `
+
+  const result = await showModal({
+    title: 'Transfer Money',
+    content,
+    confirmText: 'Transfer',
+    onMounted: () => {
+      setupDateInput('tf-date')
+      const fromEl = document.getElementById('tf-from')
+      const toEl = document.getElementById('tf-to')
+      if (fromEl && toEl) {
+        fromEl.addEventListener('change', () => {
+          const disabledVal = fromEl.value
+          Array.from(toEl.options).forEach((opt) => {
+            opt.disabled = opt.value === disabledVal
+            if (opt.disabled && opt.selected) opt.selected = false
+          })
+        })
+      }
+    },
+    onConfirm: () => {
+      const fromId = presetSourceId || document.getElementById('tf-from')?.value
+      const toId = document.getElementById('tf-to')?.value
+      const amount = parseFloat(document.getElementById('tf-amount')?.value)
+      const date = getDateInputValue('tf-date')
+      const notes = document.getElementById('tf-notes')?.value.trim() || ''
+
+      if (!fromId) { showToast('Select source', 'error'); return false }
+      if (!toId) { showToast('Select target source', 'error'); return false }
+      if (fromId === toId) { showToast('Cannot transfer to same source', 'error'); return false }
+      if (!amount || amount <= 0) { showToast('Valid amount is required', 'error'); return false }
+      if (!date) { showToast('Select date', 'error'); return false }
+
+      const fromSrc = sources.find((s) => s._id === fromId)
+      const toSrc = sources.find((s) => s._id === toId)
+
+      return {
+        fromSourceId: fromId,
+        toSourceId: toId,
+        amount,
+        date,
+        notes,
+        sourceNames: { from: fromSrc?.name || '', to: toSrc?.name || '' },
+      }
+    },
+  })
+
+  if (!result || result === true) return
+
+  try {
+    await saveSourceTransfer(result)
+    logAction('create', 'source_transfer', '', `Transferred ${result.amount} from ${result.sourceNames.from} to ${result.sourceNames.to}`)
+    showToast('Transfer recorded')
+    if (navigate) navigate('money-sources')
+    else renderMoneySources(container)
+  } catch (err) {
+    showToast('Error recording transfer: ' + err.message, 'error')
+  }
 }
 
 function renderSourceList(container, sources, allTxns, balances, navigate) {

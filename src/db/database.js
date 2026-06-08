@@ -241,6 +241,40 @@ export async function deleteSourceTransaction(id) {
   return db.remove(doc)
 }
 
+export async function saveSourceTransfer({ fromSourceId, toSourceId, amount, date, notes, sourceNames }) {
+  const db = getDb()
+  const transferPairId = 'transfer_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+  const now = new Date().toISOString()
+
+  const fromTxn = {
+    _id: 'srctxn_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    sourceId: fromSourceId,
+    type: 'debit',
+    amount,
+    date,
+    category: 'transfer',
+    transferPairId,
+    pairSourceId: toSourceId,
+    description: `Transferred to ${sourceNames?.to || 'Unknown'}`,
+    notes: notes || '',
+    createdAt: now,
+  }
+  const toTxn = {
+    _id: 'srctxn_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    sourceId: toSourceId,
+    type: 'credit',
+    amount,
+    date,
+    category: 'transfer',
+    transferPairId,
+    pairSourceId: fromSourceId,
+    description: `Transferred from ${sourceNames?.from || 'Unknown'}`,
+    notes: notes || '',
+    createdAt: now,
+  }
+  return Promise.all([db.put(fromTxn), db.put(toTxn)])
+}
+
 export async function getAuditLogs(limit = 50) {
   const all = await allDocs('audit_')
   return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit)
