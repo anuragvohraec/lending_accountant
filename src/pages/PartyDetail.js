@@ -38,7 +38,9 @@ export async function renderPartyDetail(container, navigate, params) {
   }
 
   ledgers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-  let selectedLedger = ledgers[0]
+  let selectedLedger = params.ledgerId
+    ? ledgers.find((l) => l._id === params.ledgerId) || ledgers[0]
+    : ledgers[0]
   let ledgerFilter = ['open']
   const activeSources = sources.filter((s) => s.status !== 'inactive')
 
@@ -566,6 +568,9 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
           </div>
           <div class="text-right ml-3">
             <div class="flex items-center gap-2 justify-end">
+              <button class="text-gray-300 hover:text-red-500 delete-principal-txn" data-id="${t._id}" title="Delete">
+                <ion-icon name="trash-outline" class="text-base"></ion-icon>
+              </button>
               <button class="text-gray-300 hover:text-primary edit-principal-txn" data-id="${t._id}" title="Edit">
                 <ion-icon name="create-outline" class="text-base"></ion-icon>
               </button>
@@ -613,6 +618,17 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
       if (txn) showTransactionForm(txn, party, sources, allTxns, container, navigate, null, ledgerId)
     })
   })
+
+  el.querySelectorAll('.delete-principal-txn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const confirmed = await showConfirm({ title: 'Delete Transaction?', message: 'This will permanently remove this principal transaction. Any future interest charges will be invalidated.', confirmText: 'Delete', danger: true })
+      if (!confirmed) return
+      await deleteTransaction(btn.dataset.id)
+      logAction('delete', 'transaction', btn.dataset.id, 'Deleted principal transaction')
+      showToast('Transaction deleted')
+      renderPartyDetail(container, navigate, { id: party._id })
+    })
+  })
 }
 
 function renderInterestTransactions(txns, sources, party, container, navigate, ledgerId) {
@@ -628,7 +644,10 @@ function renderInterestTransactions(txns, sources, party, container, navigate, l
   el.innerHTML = sorted.map((t) => {
     runningBalance += t.type === 'charge' ? t.amount : -t.amount
     const hasBreakdown = t.type === 'charge' && t.breakdown && t.breakdown.length > 0
+    const allocs = t.sourceAllocations || []
+    const hasSrcAllocs = t.type === 'payment' && allocs.length > 0
     const rowId = 'brk-' + (t._id || Math.random().toString(36).slice(2))
+    const srcRowId = 'src-' + (t._id || Math.random().toString(36).slice(2))
     const totalDays = hasBreakdown ? t.breakdown.reduce((s, b) => s + b.days, 0) : 0
     return `
       <div class="py-3 border-b border-gray-50 last:border-0">
@@ -648,6 +667,7 @@ function renderInterestTransactions(txns, sources, party, container, navigate, l
               </div>
             ` : ''}
             ${hasBreakdown ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${rowId}').classList.toggle('hidden')">View calculation &rsaquo;</button>` : ''}
+            ${hasSrcAllocs ? `<button class="text-xs text-primary mt-1.5" onclick="document.getElementById('${srcRowId}').classList.toggle('hidden')">View breakdown &rsaquo;</button>` : ''}
           </div>
           <div class="flex items-center gap-2 ml-3">
             ${t.type === 'charge'
@@ -687,6 +707,33 @@ function renderInterestTransactions(txns, sources, party, container, navigate, l
                 <td colspan="4" class="text-right pr-2 py-1.5"></td>
                 <td class="text-right px-2 py-1.5 font-mono">${totalDays}</td>
                 <td class="text-right pl-2 py-1.5 font-mono text-amber-600">${formatCurrencyFull(t.amount)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
+        ${hasSrcAllocs ? `
+        <div id="${srcRowId}" class="hidden mt-3 overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="text-gray-400 border-b border-gray-100">
+                <th class="text-left pb-1.5 font-medium">Source</th>
+                <th class="text-right pb-1.5 font-medium">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${allocs.map((a) => {
+                const src = sources.find((s) => s._id === a.sourceId)
+                return `
+                  <tr class="border-b border-gray-50">
+                    <td class="text-left py-1.5 text-gray-600">${src?.name || 'Unknown'}</td>
+                    <td class="text-right py-1.5 font-mono">${formatCurrencyFull(a.amount)}</td>
+                  </tr>
+                `
+              }).join('')}
+              <tr class="font-semibold border-t border-gray-200">
+                <td class="text-left py-1.5 text-gray-500">Total</td>
+                <td class="text-right py-1.5 font-mono">${formatCurrencyFull(t.amount)}</td>
               </tr>
             </tbody>
           </table>
@@ -981,7 +1028,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
   await saveTransaction(data)
   logAction('create', 'transaction', party._id, `Calculated interest of ${data.amount} for ${party.name}`)
   showToast(`Interest of ${formatCurrencyFull(data.amount)} charged`)
-  renderPartyDetail(container, navigate, { id: party._id })
+  renderPartyDetail(container, navigate, { id: party._id, ledgerId })
 }
 
 async function showInterestPaymentForm(party, allTxns, sources, container, navigate, ledgerId) {
@@ -1114,7 +1161,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
   }
   logAction('create', 'transaction', result._id || '', `Recorded interest payment of ${result.amount}`)
   showToast('Interest payment recorded')
-  renderPartyDetail(container, navigate, { id: party._id })
+  renderPartyDetail(container, navigate, { id: party._id, ledgerId })
 }
 
 async function showCollateralForm(editCollateral, partyId, collaterals, party, allTxns, sources, container, navigate, ledgerId) {
