@@ -144,7 +144,21 @@ export async function renderPartyDetail(container, navigate, params) {
     const principalTxns = txns.filter((t) => !t.category || t.category === 'principal')
     const interestTxns = txns.filter((t) => t.category === 'interest')
 
+    const totalDebit = txns.filter((t) => t.category !== 'interest' && t.type === 'debit').reduce((s, t) => s + t.amount, 0)
+    const totalCredit = txns.filter((t) => t.category !== 'interest' && t.type === 'credit').reduce((s, t) => s + t.amount, 0)
+
     document.getElementById('ledger-content').innerHTML = `
+      <div class="grid grid-cols-2 gap-2">
+        <div class="card-flat text-center">
+          <div class="stat-value text-red-500">${formatCurrency(totalDebit)}</div>
+          <div class="stat-label">Given (This Ledger)</div>
+        </div>
+        <div class="card-flat text-center">
+          <div class="stat-value text-green-500">${formatCurrency(totalCredit)}</div>
+          <div class="stat-label">Returned (This Ledger)</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-semibold text-sm">Collateral (${colls.length})</h3>
