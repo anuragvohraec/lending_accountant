@@ -492,7 +492,7 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
     <div class="py-2.5 border-b border-gray-50 last:border-0">
       <div class="flex items-start justify-between">
         <div class="flex items-start gap-2 flex-1 min-w-0">
-          ${c.image ? `<img src="${c.image}" class="w-12 h-12 rounded-lg object-cover shrink-0" />` : `<div class="w-12 h-12 rounded-lg bg-gray-50 flex items-center justify-center shrink-0"><ion-icon name="${c.type === 'gold' ? 'diamond-outline' : c.type === 'electronics' ? 'laptop-outline' : c.type === 'vehicle' ? 'car-outline' : c.type === 'document' ? 'document-text-outline' : 'cube-outline'}" class="text-gray-400 text-lg"></ion-icon></div>`}
+          ${c.image ? `<img src="${c.image}" class="w-12 h-12 rounded-lg object-cover shrink-0 cursor-pointer hover:opacity-80 collateral-image" data-src="${c.image}" />` : `<div class="w-12 h-12 rounded-lg bg-gray-50 flex items-center justify-center shrink-0"><ion-icon name="${c.type === 'gold' ? 'diamond-outline' : c.type === 'electronics' ? 'laptop-outline' : c.type === 'vehicle' ? 'car-outline' : c.type === 'document' ? 'document-text-outline' : 'cube-outline'}" class="text-gray-400 text-lg"></ion-icon></div>`}
           <div class="min-w-0">
             <div class="text-sm font-medium truncate">${c.description || c.type}</div>
             <div class="text-xs text-gray-400 flex items-center gap-2 mt-0.5">
@@ -535,6 +535,24 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
       if (col) showCollateralForm(col, party._id, collaterals, party, allTxns, sources, container, navigate, ledgerId)
     })
   })
+
+  el.querySelectorAll('.collateral-image').forEach((img) => {
+    img.addEventListener('click', () => showFullImage(img.dataset.src))
+  })
+}
+
+function showFullImage(src) {
+  const overlay = document.createElement('div')
+  overlay.className = 'fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4'
+  overlay.innerHTML = `
+    <button class="absolute top-4 right-4 text-white/70 hover:text-white z-10" id="fullimg-close">
+      <ion-icon name="close-outline" class="text-3xl"></ion-icon>
+    </button>
+    <img src="${src}" class="max-w-full max-h-full rounded-lg object-contain" />
+  `
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove() })
+  overlay.querySelector('#fullimg-close').addEventListener('click', () => overlay.remove())
+  document.body.appendChild(overlay)
 }
 
 function renderPrincipalTransactions(txns, sources, party, allTxns, container, navigate, ledgerId) {

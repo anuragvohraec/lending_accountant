@@ -139,7 +139,7 @@ window.forceSWUpdate = async function () {
     if (reg) await reg.unregister()
   }
   const base = location.href.split('?')[0].split('#')[0]
-  setTimeout(() => { location.href = base + '?_t=' + Date.now() }, 500)
+  setTimeout(() => { location.href = base + '?_t=' + Date.now() }, 3000)
 }
 
 document.addEventListener('DOMContentLoaded', init)
