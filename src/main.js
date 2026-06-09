@@ -120,12 +120,12 @@ function showPinPad(overlay) {
 
 // Service Worker registration
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(err => {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(err => {
     console.error('SW registration failed:', err)
   })
 }
 
-// Force update helper — call from Settings to clear caches, unregister SW, and reload
+// Force update helper — call from Settings to update the SW and refresh
 window.forceSWUpdate = async function () {
   showToast('Refreshing app...')
   exitConfirmed = true
@@ -135,9 +135,18 @@ window.forceSWUpdate = async function () {
   }
   if ('serviceWorker' in navigator) {
     const reg = await navigator.serviceWorker.getRegistration()
-    if (reg) await reg.unregister()
+    if (reg) {
+      // Force the browser to check for a new SW version (bypasses HTTP cache)
+      await reg.update()
+      // If a new SW is waiting, tell it to take control
+      if (reg.waiting) {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+        await new Promise(resolve => {
+          navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true })
+        })
+      }
+    }
   }
-  // Cache-bust the page URL only (not sw.js) so index.html is fetched fresh
   const base = location.href.split('?')[0].split('#')[0]
   setTimeout(() => { location.href = base + '?_t=' + Date.now() }, 300)
 }

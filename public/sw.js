@@ -1,4 +1,4 @@
-const VERSION = '5';
+const VERSION = '6';
 const CACHE = 'munimji-' + VERSION;
 
 const URLS = [
@@ -42,15 +42,16 @@ self.addEventListener("install", (e) => {
 });
 
 self.addEventListener("activate", (e) => {
-   e.waitUntil(
-       caches.keys().then((cacheNames) => {
-           return Promise.all(cacheNames.map((cacheName) => {
-               if(cacheName !== CACHE){
-                   return caches.delete(cacheName);
-                }
-           }));
-       })
-   );
+  e.waitUntil(
+    Promise.all([
+      caches.keys().then((cacheNames) => {
+        return Promise.all(cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE) return caches.delete(cacheName);
+        }));
+      }),
+      self.clients.claim(),
+    ])
+  );
 });
 
 self.addEventListener("fetch", (e) => {
