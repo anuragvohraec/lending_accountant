@@ -34,7 +34,8 @@ export async function startSync() {
     options.auth = { username: settings.couchUsername, password: settings.couchPassword }
   }
 
-  syncHandler = db.sync(settings.couchUrl, options)
+  const finalUrl = settings.couchUrl.replace(/\/+$/, '') + (settings.couchDbName ? '/' + settings.couchDbName : '')
+  syncHandler = db.sync(finalUrl, options)
 
   syncHandler.on('change', (info) => notify({ type: 'change', dir: info.direction, docs: info.change.docs.length }))
   syncHandler.on('paused', (err) => notify({ type: 'paused', err: err ? err.message : null }))

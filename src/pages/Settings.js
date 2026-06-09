@@ -64,7 +64,21 @@ export async function renderSettings(container, navigate) {
         <div class="space-y-3">
           <div>
             <label class="input-label">Server URL</label>
-            <input class="input" id="couch-url" type="url" value="${settings.couchUrl || ''}" placeholder="http://192.168.1.100:5984/dbname" />
+            <div class="relative">
+              <input class="input pr-20" id="couch-url" type="url" value="${settings.couchUrl || ''}" placeholder="http://192.168.1.100:5984" />
+              <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                <button type="button" id="couch-url-clear" class="text-gray-400 hover:text-gray-600 p-1 ${settings.couchUrl ? '' : 'hidden'}" title="Clear">
+                  <ion-icon name="close-circle-outline" class="text-lg"></ion-icon>
+                </button>
+                <button type="button" id="couch-url-qr" class="text-gray-400 hover:text-primary p-1" title="Scan QR Code">
+                  <ion-icon name="qr-code-outline" class="text-lg"></ion-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="input-label">Database Name</label>
+            <input class="input" id="couch-dbname" value="${settings.couchDbName || ''}" placeholder="my_database" />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
@@ -241,11 +255,25 @@ export async function renderSettings(container, navigate) {
     else if (ev.type === 'active') { syncMsg('Syncing...', 'text-primary') }
   })
 
+  document.getElementById('couch-url')?.addEventListener('input', function () {
+    const clearBtn = document.getElementById('couch-url-clear')
+    if (clearBtn) clearBtn.classList.toggle('hidden', !this.value)
+  })
+
+  document.getElementById('couch-url-clear')?.addEventListener('click', () => {
+    const input = document.getElementById('couch-url')
+    if (input) { input.value = ''; input.focus() }
+    document.getElementById('couch-url-clear')?.classList.add('hidden')
+  })
+
+  document.getElementById('couch-url-qr')?.addEventListener('click', showQRScanner)
+
   document.getElementById('save-couch')?.addEventListener('click', async () => {
     const url = document.getElementById('couch-url')?.value.trim()
     if (!url) { showToast('Server URL is required', 'error'); return }
     await saveSettings({
       couchUrl: url,
+      couchDbName: document.getElementById('couch-dbname')?.value.trim() || '',
       couchUsername: document.getElementById('couch-user')?.value.trim() || '',
       couchPassword: document.getElementById('couch-pass')?.value || '',
     })
@@ -276,4 +304,110 @@ export async function renderSettings(container, navigate) {
       }
     }
   })
+}
+
+function showQRScanner() {
+  let stream = null
+  let animId = null
+
+  const overlay = document.createElement('div')
+  overlay.className = 'fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4'
+  overlay.innerHTML = `
+    <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden">
+      <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 class="text-sm font-semibold">Scan QR Code</h3>
+        <button class="btn-ghost btn-icon text-gray-400" id="qr-close"><ion-icon name="close-outline" class="text-xl"></ion-icon></button>
+      </div>
+      <div class="p-4">
+        <video id="qr-video" autoplay playsinline class="w-full aspect-square rounded-xl bg-black object-cover mb-3"></video>
+        <canvas id="qr-canvas" class="hidden"></canvas>
+        <p id="qr-status" class="text-xs text-gray-400 text-center">Point camera at a QR code</p>
+        <div class="flex gap-2 mt-3">
+          <button class="btn-outline btn-sm flex-1" id="qr-upload"><ion-icon name="image-outline" class="text-sm mr-1"></ion-icon>Upload Image</button>
+        </div>
+        <input type="file" accept="image/*" id="qr-file" class="hidden" />
+      </div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 640 } }
+      })
+      const video = document.getElementById('qr-video')
+      video.srcObject = stream
+      await video.play()
+      scanFrame()
+    } catch {
+      document.getElementById('qr-status').textContent = 'Camera unavailable. Upload a QR image instead.'
+    }
+  }
+
+  function scanFrame() {
+    const video = document.getElementById('qr-video')
+    const canvas = document.getElementById('qr-canvas')
+    if (!video || !canvas || video.readyState < 2) { animId = requestAnimationFrame(scanFrame); return }
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0)
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    if (window.jsQR) {
+      const code = window.jsQR(imageData.data, imageData.width, imageData.height)
+      if (code) {
+        document.getElementById('qr-status').textContent = 'QR detected!'
+        const input = document.getElementById('couch-url')
+        if (input) input.value = code.data
+        document.getElementById('couch-url-clear')?.classList.remove('hidden')
+        setTimeout(() => { stopScanner(); overlay.remove() }, 300)
+        return
+      }
+    }
+    animId = requestAnimationFrame(scanFrame)
+  }
+
+  function stopScanner() {
+    if (animId) { cancelAnimationFrame(animId); animId = null }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null }
+  }
+
+  overlay.querySelector('#qr-close').addEventListener('click', () => { stopScanner(); overlay.remove() })
+  overlay.querySelector('#qr-upload').addEventListener('click', () => document.getElementById('qr-file')?.click())
+  overlay.querySelector('#qr-file').addEventListener('change', (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    stopScanner()
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.getElementById('qr-canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        if (window.jsQR) {
+          const code = window.jsQR(imageData.data, imageData.width, imageData.height)
+          if (code) {
+            document.getElementById('qr-status').textContent = 'QR detected!'
+            const input = document.getElementById('couch-url')
+            if (input) input.value = code.data
+            document.getElementById('couch-url-clear')?.classList.remove('hidden')
+            setTimeout(() => overlay.remove(), 300)
+          } else {
+            document.getElementById('qr-status').textContent = 'No QR code found in the image'
+          }
+        } else {
+          document.getElementById('qr-status').textContent = 'QR library not loaded'
+        }
+      }
+      img.src = ev.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+
+  startCamera()
 }
