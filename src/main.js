@@ -125,7 +125,8 @@ if ('serviceWorker' in navigator) {
   })
 }
 
-// Force update helper — call from Settings to update the SW and refresh
+// Force update helper — clears caches, unregisters SW, then reloads with cache-bust
+// updateViaCache:'none' (set above) ensures sw.js is fetched fresh on next registration
 window.forceSWUpdate = async function () {
   showToast('Refreshing app...')
   exitConfirmed = true
@@ -135,20 +136,10 @@ window.forceSWUpdate = async function () {
   }
   if ('serviceWorker' in navigator) {
     const reg = await navigator.serviceWorker.getRegistration()
-    if (reg) {
-      // Force the browser to check for a new SW version (bypasses HTTP cache)
-      await reg.update()
-      // If a new SW is waiting, tell it to take control
-      if (reg.waiting) {
-        reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-        await new Promise(resolve => {
-          navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true })
-        })
-      }
-    }
+    if (reg) await reg.unregister()
   }
   const base = location.href.split('?')[0].split('#')[0]
-  setTimeout(() => { location.href = base + '?_t=' + Date.now() }, 300)
+  setTimeout(() => { location.href = base + '?_t=' + Date.now() }, 500)
 }
 
 document.addEventListener('DOMContentLoaded', init)
