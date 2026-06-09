@@ -3,7 +3,7 @@ import { showToast } from '../components/Toast.js'
 import { showConfirm, showPrompt } from '../components/Modal.js'
 import { exportBackup, importBackup } from '../services/export.js'
 import { isLockEnabled, getLockMethod, webauthnAvailable, setupWebAuthn, setPin, clearAuth } from '../services/pin.js'
-import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers } from '../db/database.js'
+import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers, getAllAuditLogs } from '../db/database.js'
 import { formatDateTime } from '../utils/formatters.js'
 import { startSync, stopSync, getSyncState, onSyncStatus, clearSyncListeners } from '../services/sync.js'
 
@@ -125,10 +125,10 @@ export async function renderSettings(container, navigate) {
     </div>
   `
 
-  const [sources, parties, txns, collaterals, srcTxns, ledgers] = await Promise.all([
-    getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(), getLedgers(),
+  const [sources, parties, txns, collaterals, srcTxns, ledgers, allAuditLogs] = await Promise.all([
+    getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(), getLedgers(), getAllAuditLogs(),
   ])
-  document.getElementById('data-count').textContent = (sources.length + parties.length + txns.length + collaterals.length + srcTxns.length + ledgers.length) + ' records'
+  document.getElementById('data-count').textContent = (sources.length + parties.length + txns.length + collaterals.length + srcTxns.length + ledgers.length + allAuditLogs.length) + ' records'
 
   ;(async () => {
     const el = document.getElementById('sw-version')

@@ -43,7 +43,7 @@ export function formatDate(dateStr) {
 
 export function formatDateTime(dateStr) {
   if (!dateStr) return '-'
-  return toDDMMYYHHMM(new Date(dateStr))
+  return toDDMMYY(new Date(dateStr))
 }
 
 export function formatDateShort(dateStr) {

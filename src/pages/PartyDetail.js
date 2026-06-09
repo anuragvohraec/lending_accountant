@@ -468,7 +468,7 @@ export async function renderPartyDetail(container, navigate, params) {
 
       <div id="ledger-tabs"></div>
 
-      <div id="ledger-content"></div>
+      <div id="ledger-content" class="space-y-3"></div>
     </div>
   `
 

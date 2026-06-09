@@ -28,10 +28,10 @@ export function dateInputHTML({ id, value, placeholder = 'dd/mm/yy', cls = '' })
     <div class="date-input-wrap flex items-center gap-1 ${cls}">
       <input type="text" class="input flex-1 date-text" id="${id}" placeholder="${placeholder}" value="${displayVal}" autocomplete="off" />
       <input type="date" class="date-native" id="${id}-native" value="${isoVal}" style="display:none" />
-      <button type="button" class="date-clear-btn text-gray-400 text-lg p-1 shrink-0 ${value ? '' : 'hidden'}" data-target="${id}" title="Clear">
+      <button type="button" class="date-clear-btn text-gray-400 text-base p-0.5 shrink-0 ${value ? '' : 'hidden'}" data-target="${id}" title="Clear">
         <ion-icon name="close-circle-outline"></ion-icon>
       </button>
-      <button type="button" class="date-picker-btn text-gray-500 text-lg p-1 -ml-1 shrink-0" data-target="${id}">
+      <button type="button" class="date-picker-btn text-gray-500 text-base p-0.5 shrink-0" data-target="${id}">
         <ion-icon name="calendar-outline"></ion-icon>
       </button>
     </div>

@@ -11,6 +11,12 @@ import { escHtml } from '../utils/helpers.js'
 let _source, _allTxns, _sourceTxns, _allParties, _container, _navigate, _params
 
 export async function renderMoneySourceDetail(container, navigate, params) {
+  _page = 1
+  _perPage = 10
+  _filterDateFrom = ''
+  _filterDateTo = ''
+  _filterParty = ''
+
   const removeLoader = showSkeleton(container)
   const [source, allTxns, sourceTxns, allParties] = await Promise.all([
     getMoneySource(params.id),

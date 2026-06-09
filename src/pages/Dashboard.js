@@ -25,6 +25,10 @@ export async function renderDashboard(container) {
   container.innerHTML = `
     <div class="space-y-4 slide-up">
       <div id="dash-summary" class="grid grid-cols-2 gap-3"></div>
+      <div id="dash-party-outstanding" class="hidden card">
+        <h3 class="font-semibold text-sm mb-3">Party-wise Outstanding</h3>
+        <div id="dash-party-list"></div>
+      </div>
       <div id="dash-pending-collections" class="card">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-semibold text-sm">Pending Interest Collections</h3>
@@ -149,6 +153,21 @@ export async function renderDashboard(container) {
       </div>
     </div>
   `).join('')
+
+  const partyOutstanding = activeParties.map(p => ({
+    name: p.name,
+    amount: Math.round(Math.max(0, getOutstandingForParty(allTxns.filter(t => t.partyId === p._id))) * 100) / 100,
+  })).filter(p => p.amount > 0).sort((a, b) => b.amount - a.amount)
+  const partyOsEl = document.getElementById('dash-party-outstanding')
+  if (partyOutstanding.length > 0) {
+    document.getElementById('dash-party-list').innerHTML = partyOutstanding.map(p => `
+      <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+        <span class="text-sm">${p.name}</span>
+        <span class="amount-negative text-sm">${formatCurrencyFull(p.amount)}</span>
+      </div>
+    `).join('')
+    partyOsEl?.classList.remove('hidden')
+  }
 
   const recentTxns = allTxns.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10)
   const partyMap = {}

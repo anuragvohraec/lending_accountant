@@ -70,6 +70,7 @@ export async function renderParties(container, navigate) {
                 ${p.phone ? `<span>${p.phone}</span>` : ''}
               </div>
               ${p.riskCategory ? `<div class="text-xs text-gray-400 mt-0.5 capitalize">${p.riskCategory} risk</div>` : ''}
+              ${p.notes ? `<div class="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]" title="${escHtml(p.notes)}">${escHtml(p.notes)}</div>` : ''}
             </div>
             <div class="text-right">
               <div class="text-xs text-gray-400">${outstanding > 0 ? 'Due' : 'Cleared'}</div>

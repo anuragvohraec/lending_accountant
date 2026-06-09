@@ -275,8 +275,12 @@ export async function saveSourceTransfer({ fromSourceId, toSourceId, amount, dat
   return Promise.all([db.put(fromTxn), db.put(toTxn)])
 }
 
+export async function getAllAuditLogs() {
+  return allDocs('audit_')
+}
+
 export async function getAuditLogs(limit = 50) {
-  const all = await allDocs('audit_')
+  const all = await getAllAuditLogs()
   return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit)
 }
 
