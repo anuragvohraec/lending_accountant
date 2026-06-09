@@ -1,6 +1,6 @@
 import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
-import { getOutstandingForParty, getPendingInterestByParty } from '../services/interest.js'
+import { getOutstandingForParty } from '../services/interest.js'
 import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
 import { generateTaxReport, renderTaxReportOverlay } from './TaxReport.js'
 import { generatePartnerTransferReport, renderPartnerTransferReportOverlay } from './PartnerTransferReport.js'
@@ -112,7 +112,7 @@ export async function renderDashboard(container) {
     return getOutstandingForParty(partyTxns) > 0 && (new Date() - new Date(lastTxn.date)) > 30 * 86400000
   })
 
-  const pendingInterest = getPendingInterestByParty(allTxns, activeParties)
+  const pendingInterest = generateInterestReport(allTxns, activeParties, allLedgers)
   const pendingEl = document.getElementById('dash-pending-list')
   if (pendingInterest.length === 0) {
     document.getElementById('dash-pending-collections')?.classList.add('hidden')
@@ -125,9 +125,10 @@ export async function renderDashboard(container) {
           </div>
           <div class="min-w-0">
             <div class="text-sm font-medium truncate">${pc.party.name}</div>
+            <div class="text-[10px] text-gray-400 truncate">${pc.ledger.name} (${pc.ledger.interestRate}%/mo)</div>
           </div>
         </div>
-        <div class="font-mono font-semibold text-sm text-amber-600 ml-3">${formatCurrencyFull(pc.amount)}</div>
+        <div class="font-mono font-semibold text-sm text-amber-600 ml-3">${formatCurrencyFull(pc.netPending)}</div>
       </div>
     `).join('')
   }
