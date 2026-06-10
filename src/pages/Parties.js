@@ -164,7 +164,17 @@ async function showPartyForm(editParty, parties, allTxns, container, navigate) {
   if (isEdit) result._id = editParty._id
 
   await saveParty(result)
-  logAction(isEdit ? 'update' : 'create', 'party', result._id || '', isEdit ? 'Updated party' : 'Created party')
+  if (isEdit) {
+    const changed = []
+    if (editParty.name !== result.name) changed.push('name:' + editParty.name + '→' + result.name)
+    if (editParty.phone !== result.phone) changed.push('phone changed')
+    if (editParty.address !== result.address) changed.push('address changed')
+    if (editParty.riskCategory !== result.riskCategory) changed.push('risk changed')
+    if (editParty.status !== result.status) changed.push('status:' + editParty.status + '→' + result.status)
+    logAction('update', 'party', result._id, `Updated party "${result.name}" — ${changed.join(', ') || 'details changed'}`)
+  } else {
+    logAction('create', 'party', result._id, `Created party "${result.name}" — phone: ${result.phone || 'N/A'}, address: ${result.address || 'N/A'}, risk: ${result.riskCategory || 'N/A'}`)
+  }
   showToast(isEdit ? 'Party updated' : 'Party added')
   renderParties(container, navigate)
 }

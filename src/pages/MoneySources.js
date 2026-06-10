@@ -166,7 +166,7 @@ async function showTransferForm(sources, presetSourceId, container, navigate) {
 
   try {
     await saveSourceTransfer(result)
-    logAction('create', 'source_transfer', '', `Transferred ${result.amount} from ${result.sourceNames.from} to ${result.sourceNames.to}`)
+    logAction('create', 'source_transfer', result.fromSourceId + '>' + result.toSourceId, `Transferred ${result.amount} on ${result.date?.slice(0, 10)} from ${result.sourceNames.from} to ${result.sourceNames.to}`)
     showToast('Transfer recorded')
     if (navigate) navigate('money-sources')
     else renderMoneySources(container)
@@ -259,8 +259,9 @@ function renderSourceList(container, sources, allTxns, balances, navigate) {
     btn.addEventListener('click', async () => {
       const confirmed = await showConfirm({ title: 'Delete Source?', message: 'This will permanently remove this money source.', confirmText: 'Delete', danger: true })
       if (confirmed) {
+        const deletedSrc = sources.find(s => s._id === btn.dataset.id)
         await deleteMoneySource(btn.dataset.id)
-        logAction('delete', 'money_source', btn.dataset.id, 'Deleted money source')
+        logAction('delete', 'money_source', btn.dataset.id, `Deleted source "${deletedSrc?.name || btn.dataset.id}" (${deletedSrc?.type || ''})`)
         showToast('Source deleted')
         renderMoneySources(container, navigate)
       }
@@ -336,7 +337,16 @@ async function showSourceForm(editSource, sources, allTxns, container) {
     showToast('Error saving: ' + err.message, 'error')
     return
   }
-  logAction(isEdit ? 'update' : 'create', 'money_source', result._id || '', isEdit ? 'Updated money source' : 'Created money source')
+  if (isEdit) {
+    const changed = []
+    if (editSource.name !== result.name) changed.push('name:' + editSource.name + '→' + result.name)
+    if (editSource.type !== result.type) changed.push('type:' + editSource.type + '→' + result.type)
+    if (editSource.owner !== result.owner) changed.push('owner:' + editSource.owner + '→' + result.owner)
+    if (editSource.status !== result.status) changed.push('status:' + editSource.status + '→' + result.status)
+    logAction('update', 'money_source', result._id, `Updated source "${result.name}" — ${changed.join(', ') || 'details changed'}`)
+  } else {
+    logAction('create', 'money_source', result._id, `Created source "${result.name}" (${result.type || 'N/A'}, owner: ${result.owner || 'N/A'})`)
+  }
   showToast(isEdit ? 'Source updated' : 'Source added')
   renderMoneySources(container)
 }

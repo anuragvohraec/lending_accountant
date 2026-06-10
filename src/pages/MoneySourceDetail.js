@@ -285,8 +285,9 @@ function renderLedger() {
     btn.addEventListener('click', async () => {
       const confirmed = await showConfirm({ title: 'Delete Entry?', message: 'This will permanently remove this ledger entry.', confirmText: 'Delete', danger: true })
       if (!confirmed) return
+      const deletedEntry = _sourceTxns.find(t => t._id === btn.dataset.id)
       await deleteSourceTransaction(btn.dataset.id)
-      logAction('delete', 'source_transaction', btn.dataset.id, 'Deleted source ledger entry')
+      logAction('delete', 'source_transaction', btn.dataset.id, `Deleted ${deletedEntry?.type || 'entry'} of ${deletedEntry?.amount || '?'} (${deletedEntry?.description || ''}) from ${_source.name}`)
       showToast('Entry deleted')
       const [_src, _all, _srcTxns, _parties] = await Promise.all([
         getMoneySource(_params.id),
@@ -477,7 +478,8 @@ async function showSourceTxnForm(sourceId, container, navigate, presetType) {
   if (!result || result === true) return
 
   await saveSourceTransaction(result)
-  logAction('create', 'source_transaction', result._id || '', `Added ${result.type} entry of ${result.amount} to source ledger`)
+  const src = await getMoneySource(sourceId)
+  logAction('create', 'source_transaction', result._id || '', `Added ${result.type} of ${result.amount} (${result.description}) to ${src?.name || sourceId}`)
   showToast('Ledger entry added')
 
   const [_src, _all, _srcTxns, _parties] = await Promise.all([
@@ -559,7 +561,7 @@ async function showSourceTransferForm(sourceId, container, navigate) {
 
   try {
     await saveSourceTransfer(result)
-    logAction('create', 'source_transfer', '', `Transferred ${result.amount} from ${result.sourceNames.from} to ${result.sourceNames.to}`)
+    logAction('create', 'source_transfer', result.fromSourceId + '>' + result.toSourceId, `Transferred ${result.amount} on ${formatDate(result.date)} from ${result.sourceNames.from} to ${result.sourceNames.to}`)
     showToast('Transfer recorded')
     const [_src, _all, _srcTxns, _parties] = await Promise.all([
       getMoneySource(sourceId),

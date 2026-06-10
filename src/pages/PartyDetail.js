@@ -334,7 +334,7 @@ export async function renderPartyDetail(container, navigate, params) {
 
     if (!result || result === true) return
     await saveLedger(result)
-    logAction('create', 'ledger', party._id, `Created ledger: ${result.name}`)
+    logAction('create', 'ledger', party._id, `Created ledger "${result.name}" (${result.interestRate}%/mo) for ${party.name}`)
     showToast('Ledger created')
     renderPartyDetail(container, navigate, { id: party._id })
   }
@@ -407,7 +407,7 @@ export async function renderPartyDetail(container, navigate, params) {
 
     if (!result || result === true) return
     await saveLedger(result)
-    logAction('update', 'ledger', ledger._id, `Updated ledger: ${result.name}`)
+    logAction('update', 'ledger', ledger._id, `Updated ledger "${result.name}" for ${party.name}`)
     showToast('Ledger updated')
     renderPartyDetail(container, navigate, { id: party._id })
   }
@@ -431,7 +431,7 @@ export async function renderPartyDetail(container, navigate, params) {
     for (const t of txns) await deleteTransaction(t._id)
     for (const c of colls) await deleteCollateral(c._id)
     await deleteLedger(ledger._id)
-    logAction('delete', 'ledger', ledger._id, `Deleted ledger: ${ledger.name} with ${txnCount} txns, ${collCount} colls`)
+    logAction('delete', 'ledger', ledger._id, `Deleted ledger "${ledger.name}" (${party.name}) with ${txnCount} txns, ${collCount} colls`)
     showToast('Ledger deleted')
     renderPartyDetail(container, navigate, { id: party._id })
   }
@@ -523,7 +523,7 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
       const col = collaterals.find((c) => c._id === id)
       if (!col) return
       await saveCollateral({ ...col, status: newStatus, lastUpdated: new Date().toISOString() })
-      logAction('update', 'collateral', id, `Changed collateral status to ${newStatus}`)
+      logAction('update', 'collateral', id, `Changed ${col.description || col.type || 'collateral'} (${party.name}) status to ${newStatus === 'held' ? 'In Possession' : 'Returned'}`)
       showToast(`Collateral marked as ${newStatus === 'held' ? 'In Possession' : 'Returned'}`)
       renderPartyDetail(container, navigate, { id: party._id })
     })
@@ -641,8 +641,10 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
     btn.addEventListener('click', async () => {
       const confirmed = await showConfirm({ title: 'Delete Transaction?', message: 'This will permanently remove this principal transaction. Any future interest charges will be invalidated.', confirmText: 'Delete', danger: true })
       if (!confirmed) return
+      const deletedTxn = allTxns.find(t => t._id === btn.dataset.id)
       await deleteTransaction(btn.dataset.id)
-      logAction('delete', 'transaction', btn.dataset.id, 'Deleted principal transaction')
+      const txnDesc = deletedTxn ? `${deletedTxn.type === 'debit' ? 'Loan given' : 'Repayment'} of ${deletedTxn.amount} on ${deletedTxn.date?.slice(0, 10) || '?'}` : 'principal transaction'
+      logAction('delete', 'transaction', btn.dataset.id, `Deleted ${txnDesc} (${party.name})`)
       showToast('Transaction deleted')
       renderPartyDetail(container, navigate, { id: party._id })
     })
@@ -765,8 +767,9 @@ function renderInterestTransactions(txns, sources, party, container, navigate, l
     btn.addEventListener('click', async () => {
       const confirmed = await showConfirm({ title: 'Delete Payment?', message: 'This will remove this interest payment entry.', confirmText: 'Delete', danger: true })
       if (!confirmed) return
+      const deletedInt = allTxns.find(t => t._id === btn.dataset.id)
       await deleteTransaction(btn.dataset.id)
-      logAction('delete', 'transaction', btn.dataset.id, 'Deleted interest payment')
+      logAction('delete', 'transaction', btn.dataset.id, `Deleted interest payment of ${deletedInt?.amount || '?'} from ${party.name}`)
       showToast('Interest payment deleted')
       renderPartyDetail(container, navigate, { id: party._id })
     })
@@ -790,7 +793,7 @@ function renderInterestTransactions(txns, sources, party, container, navigate, l
       for (const charge of toDelete) {
         await deleteTransaction(charge._id)
       }
-      logAction('delete', 'transaction', party._id, `Deleted ${toDelete.length} interest charges from ${formatDate(chargeDate)} onwards`)
+      logAction('delete', 'transaction', party._id, `Deleted ${toDelete.length} interest charges from ${formatDate(chargeDate)} onwards for ${party.name}`)
       showToast(`Deleted ${toDelete.length} interest charge(s)`)
       renderPartyDetail(container, navigate, { id: party._id })
     })
@@ -960,12 +963,13 @@ async function showTransactionForm(editTxn, party, sources, allTxns, container, 
       for (const charge of interestCharges) {
         await deleteTransaction(charge._id)
       }
-      logAction('delete', 'transaction', party._id, `Deleted ${interestCharges.length} interest charges due to principal transaction edit`)
+      logAction('delete', 'transaction', party._id, `Deleted ${interestCharges.length} interest charges for ${party.name} due to principal transaction ${editTxn.type} of ${editTxn.amount} edit`)
     }
   }
 
   await saveTransaction(result)
-  logAction(isEdit ? 'update' : 'create', 'transaction', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${result.type} principal transaction of ${result.amount}`)
+  const txnLabel = result.type === 'debit' ? 'Loan given' : 'Repayment'
+  logAction(isEdit ? 'update' : 'create', 'transaction', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${txnLabel} of ${result.amount} on ${result.date?.slice(0, 10)} for ${party.name}`)
   showToast(isEdit ? 'Transaction updated' : 'Transaction added')
   renderPartyDetail(container, navigate, { id: party._id })
 }
@@ -1044,7 +1048,7 @@ async function showInterestChargeForm(party, allTxns, sources, container, naviga
   }
 
   await saveTransaction(data)
-  logAction('create', 'transaction', party._id, `Calculated interest of ${data.amount} for ${party.name}`)
+  logAction('create', 'transaction', party._id, `Charged interest of ${data.amount} for ${party.name} / ${ledger.name} (${ledger.interestRate}%/mo) from ${formatDate(actualFromDate)} to ${formatDate(actualToDate)}`)
   showToast(`Interest of ${formatCurrencyFull(data.amount)} charged`)
   renderPartyDetail(container, navigate, { id: party._id, ledgerId })
 }
@@ -1178,7 +1182,8 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
       })
     }
   }
-  logAction('create', 'transaction', result._id || '', `Recorded interest payment of ${result.amount}`)
+  const srcNames = (result.sourceAllocations || []).map(a => { const s = (activeSources || sources).find(s => s._id === a.sourceId); return s?.name || a.sourceId }).join(', ')
+  logAction('create', 'transaction', result._id || '', `Interest payment of ${result.amount} from ${party.name} via ${srcNames || 'no source'}`)
   showToast('Interest payment recorded')
   renderPartyDetail(container, navigate, { id: party._id, ledgerId })
 }
@@ -1287,7 +1292,7 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
   if (!result._id) result._id = editCollateral?._id
 
   await saveCollateral(result)
-  logAction(isEdit ? 'update' : 'create', 'collateral', result._id || '', `${isEdit ? 'Updated' : 'Added'} collateral: ${result.description}`)
+  logAction(isEdit ? 'update' : 'create', 'collateral', result._id || '', `${isEdit ? 'Updated' : 'Added'} ${result.type || 'collateral'} "${result.description}" worth ${result.estimatedValue || 0} for ${party.name}`)
   showToast(isEdit ? 'Collateral updated' : 'Collateral added')
   renderPartyDetail(container, navigate, { id: partyId })
 }
@@ -1318,7 +1323,7 @@ function showPartyMenu(party, allTxns, sources, container, navigate) {
       for (const c of await getCollaterals(party._id)) await deleteCollateral(c._id)
       for (const l of await getLedgers(party._id)) await deleteLedger(l._id)
       await deleteParty(party._id)
-      logAction('delete', 'party', party._id, 'Deleted party')
+      logAction('delete', 'party', party._id, `Deleted party "${party.name}" with ${allTxns.length} txns, ${ (await getCollaterals(party._id)).length } collaterals, ${ (await getLedgers(party._id)).length } ledgers`)
       showToast('Party deleted')
       navigate('parties')
     }
@@ -1393,7 +1398,13 @@ async function showPartyForm(party, sources, allTxns, container, navigate) {
   if (!result || result === true) return
 
   await saveParty(result)
-  logAction('update', 'party', party._id, 'Updated party details')
+  const changed = []
+  if (party.name !== result.name) changed.push('name:' + party.name + '→' + result.name)
+  if (party.phone !== result.phone) changed.push('phone:' + party.phone + '→' + result.phone)
+  if (party.address !== result.address) changed.push('address changed')
+  if (party.riskCategory !== result.riskCategory) changed.push('risk:' + party.riskCategory + '→' + result.riskCategory)
+  if (party.status !== result.status) changed.push('status:' + party.status + '→' + result.status)
+  logAction('update', 'party', party._id, `Updated party "${result.name}" — ${changed.join(', ') || 'details changed'}`)
   showToast('Party updated')
   renderPartyDetail(container, navigate, { id: party._id })
 }
