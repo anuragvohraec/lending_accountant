@@ -1,4 +1,4 @@
-import { getParty, saveParty, deleteParty, getMoneySources, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers, saveSourceTransaction } from '../db/database.js'
+import { getParty, saveParty, deleteParty, getMoneySources, getAllTransactions, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers, saveSourceTransaction } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
 import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getPartnerWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
@@ -12,8 +12,10 @@ import { escHtml } from '../utils/helpers.js'
 export async function renderPartyDetail(container, navigate, params) {
   const removeLoader = showSkeleton(container)
   const [party, sources, allTxns, collaterals, ledgers] = await Promise.all([
-    getParty(params.id), getMoneySources(), getTransactions(params.id), getCollaterals(params.id), getLedgers(params.id),
+    getParty(params.id), getMoneySources(), getAllTransactions(), getCollaterals(params.id), getLedgers(params.id),
   ])
+  const partyTxns = allTxns.filter(t => t.partyId === params.id)
+  allTxns.length = 0; allTxns.push(...partyTxns)
   for (const c of collaterals) {
     if (c._attachments?.image && !c.image) {
       c.image = await getCollateralImageDataUrl(c._id)
