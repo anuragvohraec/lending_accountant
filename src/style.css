@@ -28,9 +28,9 @@
   .badge-purple { @apply badge bg-purple-100 text-purple-700; }
   .stat-value { @apply text-2xl font-bold font-mono tracking-tight; }
   .stat-label { @apply text-xs text-gray-500 font-medium uppercase tracking-wider; }
-  .nav-link { @apply flex flex-col items-center gap-0.5 px-3 py-1.5 text-xs font-medium text-gray-400 transition-colors; }
+  .nav-link { @apply flex flex-col items-center gap-0.5 px-2 py-1.5 text-[10px] font-medium text-gray-400 transition-colors; }
   .nav-link.active { @apply text-primary; }
-  .nav-link ion-icon { @apply text-xl; }
+  .nav-link ion-icon { @apply text-lg; }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
   .page-title { @apply text-lg font-bold text-gray-900; }
   .divider { @apply border-t border-gray-100 my-3; }
