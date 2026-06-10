@@ -184,8 +184,8 @@ export async function renderTodos(container, navigate) {
             <button class="todo-delete p-1 rounded-lg text-gray-300 hover:text-red-400" title="Delete">
               <ion-icon name="trash-outline" class="text-base"></ion-icon>
             </button>
-            <div class="todo-target-date text-[11px] font-medium text-center cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
-              ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
+            <div class="todo-target-date text-[11px] font-medium text-center cursor-pointer leading-tight text-primary" data-id="${t._id}">
+              ${fmtDate(t.targetDate || todayISO())}
             </div>
             <button class="todo-toggle p-1 rounded-lg ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
               <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-lg"></ion-icon>
@@ -240,22 +240,38 @@ export async function renderTodos(container, navigate) {
       onDoubleTap(el, () => {
         const item = todos.find(t => t._id === el.dataset.id)
         if (!item) return
-        const current = item.targetDate ? item.targetDate.slice(0, 10) : ''
+        const current = item.targetDate ? fmtDate(item.targetDate) : fmtDate(todayISO())
         const input = document.createElement('input')
-        input.type = 'date'
-        input.className = 'input text-xs py-0.5 px-1 w-32 text-center'
+        input.type = 'text'
+        input.className = 'input text-xs py-0.5 px-1 w-28 text-center'
         input.value = current
+        input.inputMode = 'numeric'
         el.innerHTML = ''
         el.appendChild(input)
         input.focus()
+        input.select()
+
+        function parseDate(str) {
+          const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})?(\d{2})$/)
+          if (!m) return null
+          let dd = parseInt(m[1]), mm = parseInt(m[2]), yy = m[4] || m[3]
+          if (yy.length === 2) yy = '20' + yy
+          if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return null
+          return yy + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0')
+        }
+
         input.addEventListener('blur', async () => {
-          item.targetDate = input.value || ''
+          const parsed = parseDate(input.value)
+          item.targetDate = parsed || todayISO()
           item.updatedAt = new Date().toISOString()
           await saveTodo(item)
           sortTodos()
           renderList()
         })
-        input.addEventListener('change', () => input.blur())
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') input.blur()
+          if (e.key === 'Escape') { input.value = current; input.blur() }
+        })
       })
     })
 
