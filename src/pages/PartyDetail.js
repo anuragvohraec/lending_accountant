@@ -24,9 +24,10 @@ export async function renderPartyDetail(container, navigate, params) {
 
   if (!ledgers || ledgers.length === 0) {
     await migrateLedgers(params.id)
-    const [newLedgers, newTxns, newColls] = await Promise.all([getLedgers(params.id), getTransactions(params.id), getCollaterals(params.id)])
+    const [newLedgers, newTxns, newColls] = await Promise.all([getLedgers(params.id), getAllTransactions(), getCollaterals(params.id)])
     ledgers.push(...newLedgers)
-    allTxns.length = 0; allTxns.push(...newTxns)
+    const filtered = newTxns.filter(t => t.partyId === params.id)
+    allTxns.length = 0; allTxns.push(...filtered)
     collaterals.length = 0; collaterals.push(...newColls)
     for (const c of collaterals) {
       if (c._attachments?.image && !c.image) c.image = await getCollateralImageDataUrl(c._id)
