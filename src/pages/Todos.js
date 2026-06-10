@@ -120,29 +120,34 @@ export async function renderTodos(container, navigate) {
     el.innerHTML = filtered.map(t => {
       const created = new Date(t.createdAt)
       const cd = String(created.getDate()).padStart(2, '0') + '/' + String(created.getMonth() + 1).padStart(2, '0') + '/' + String(created.getFullYear()).slice(-2)
+      const cc = t.color || ''
+      const dotClass = cc === 'red' ? 'bg-red-400'
+        : cc === 'green' ? 'bg-green-400'
+        : cc === 'grey' ? 'bg-gray-400'
+        : cc === 'yellow' ? 'bg-yellow-400'
+        : 'bg-gray-300 border-2 border-gray-400'
       return `
         <div class="card !p-0 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
           <div class="flex items-center justify-between gap-2 px-2.5 py-1 ${headerBg(t.color)} rounded-t-xl">
             <button class="todo-toggle p-1 rounded-lg ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
               <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-lg"></ion-icon>
             </button>
-            <div class="flex items-center gap-1">
-              ${COLORS.map(c => `
-                <button class="todo-color w-3.5 h-3.5 rounded-full ${c.dot} ${(t.color || '') === c.value ? 'ring-2 ring-offset-1 ring-primary' : 'ring-1 ring-gray-300'}" data-color="${c.value}" title="${c.label}"></button>
-              `).join('')}
+            <div class="todo-target-date text-[11px] font-medium text-center cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
+              ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
             </div>
             <button class="todo-delete p-1 rounded-lg text-gray-300 hover:text-red-400" title="Delete">
               <ion-icon name="trash-outline" class="text-base"></ion-icon>
             </button>
           </div>
           <div class="px-2.5 py-2">
-            <div class="flex items-center justify-between gap-2 mb-1.5">
-              <div class="todo-target-date text-[11px] font-medium cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
-                ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
-              </div>
-              <span class="text-[10px] text-gray-400">${cd}</span>
-            </div>
             <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none">${escHtml(t.note || '')}</div>
+            <div class="flex items-center justify-between mt-1.5">
+              <span class="text-[10px] text-gray-400">${cd}</span>
+              <div class="relative">
+                <button class="todo-color-trigger w-4 h-4 rounded-full ${dotClass}"></button>
+                <div class="todo-color-popover hidden absolute bottom-full right-0 mb-1 p-1.5 bg-white rounded-lg shadow-xl border border-gray-200 flex gap-1 z-20"></div>
+              </div>
+            </div>
           </div>
         </div>
       `
@@ -174,17 +179,46 @@ export async function renderTodos(container, navigate) {
       })
     })
 
-    el.querySelectorAll('.todo-color').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const item = todos.find(t => t._id === btn.closest('.todo-item').dataset.id)
+    el.querySelectorAll('.todo-color-trigger').forEach(trigger => {
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const item = todos.find(t => t._id === trigger.closest('.todo-item').dataset.id)
         if (!item) return
-        const color = btn.dataset.color
-        if ((item.color || '') === color) return
-        item.color = color || ''
-        item.updatedAt = new Date().toISOString()
-        await saveTodo(item)
-        sortTodos()
-        renderList()
+
+        const existing = trigger.parentNode.querySelector('.todo-color-popover')
+        if (!existing.classList.contains('hidden')) {
+          existing.classList.add('hidden')
+          return
+        }
+
+        document.querySelectorAll('.todo-color-popover:not(.hidden)').forEach(p => p.classList.add('hidden'))
+
+        existing.innerHTML = COLORS.map(c => {
+          const active = (item.color || '') === c.value
+          return `<button class="w-4 h-4 rounded-full ${c.dot} ${active ? 'ring-2 ring-offset-1 ring-primary' : ''} flex-shrink-0" data-color="${c.value}" title="${c.label}"></button>`
+        }).join('')
+        existing.classList.remove('hidden')
+
+        existing.querySelectorAll('button').forEach(opt => {
+          opt.addEventListener('click', async (e2) => {
+            e2.stopPropagation()
+            const color = opt.dataset.color
+            if ((item.color || '') === color) return
+            item.color = color || ''
+            item.updatedAt = new Date().toISOString()
+            await saveTodo(item)
+            sortTodos()
+            renderList()
+          })
+        })
+
+        const closePopover = (e2) => {
+          if (!trigger.parentNode.contains(e2.target)) {
+            existing.classList.add('hidden')
+            document.removeEventListener('click', closePopover, true)
+          }
+        }
+        setTimeout(() => document.addEventListener('click', closePopover, true), 0)
       })
     })
 
