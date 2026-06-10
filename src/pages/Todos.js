@@ -106,6 +106,47 @@ export async function renderTodos(container, navigate) {
     }
   })
 
+  const todoList = document.getElementById('todo-list')
+  todoList.addEventListener('click', async (e) => {
+    const opt = e.target.closest('.todo-color-opt')
+    if (opt) {
+      e.stopPropagation()
+      const item = todos.find(t => t._id === opt.closest('.todo-item').dataset.id)
+      if (!item) return
+      const color = opt.dataset.color
+      if ((item.color || '') === color) return
+      item.color = color || ''
+      item.updatedAt = new Date().toISOString()
+      await saveTodo(item)
+      sortTodos()
+      renderList()
+      return
+    }
+
+    const trig = e.target.closest('.todo-color-trigger')
+    if (trig) {
+      e.stopPropagation()
+      const item = todos.find(t => t._id === trig.closest('.todo-item').dataset.id)
+      if (!item) return
+      const popover = trig.parentNode.querySelector('.todo-color-popover')
+      if (!popover.classList.contains('hidden')) {
+        popover.classList.add('hidden')
+        if (openColorPopover?.popover === popover) openColorPopover = null
+        return
+      }
+      document.querySelectorAll('.todo-color-popover:not(.hidden)').forEach(p => p.classList.add('hidden'))
+      popover.querySelectorAll('.todo-color-opt').forEach(opt => {
+        const active = (item.color || '') === opt.dataset.color
+        opt.classList.toggle('ring-2', active)
+        opt.classList.toggle('ring-offset-1', active)
+        opt.classList.toggle('ring-primary', active)
+      })
+      popover.classList.remove('hidden')
+      openColorPopover = { trigger: trig, popover }
+      return
+    }
+  })
+
   function renderList() {
     const searchVal = document.getElementById('todo-search').value
     const showClosed = document.getElementById('todo-show-closed').dataset.showClosed === 'true'
@@ -190,47 +231,6 @@ export async function renderTodos(container, navigate) {
         await deleteTodo(item._id)
         logAction('delete', 'todo', item._id, `Deleted todo: ${(item.note || '').slice(0, 50)}`)
         todos = todos.filter(t => t._id !== item._id)
-        renderList()
-      })
-    })
-
-    el.querySelectorAll('.todo-color-trigger').forEach(trigger => {
-      trigger.addEventListener('click', (e) => {
-        e.stopPropagation()
-        const item = todos.find(t => t._id === trigger.closest('.todo-item').dataset.id)
-        if (!item) return
-
-        const popover = trigger.parentNode.querySelector('.todo-color-popover')
-        if (!popover.classList.contains('hidden')) {
-          popover.classList.add('hidden')
-          if (openColorPopover?.popover === popover) openColorPopover = null
-          return
-        }
-
-        document.querySelectorAll('.todo-color-popover:not(.hidden)').forEach(p => p.classList.add('hidden'))
-
-        popover.querySelectorAll('.todo-color-opt').forEach(opt => {
-          const active = (item.color || '') === opt.dataset.color
-          opt.classList.toggle('ring-2', active)
-          opt.classList.toggle('ring-offset-1', active)
-          opt.classList.toggle('ring-primary', active)
-        })
-        popover.classList.remove('hidden')
-        openColorPopover = { trigger, popover }
-      })
-    })
-
-    el.querySelectorAll('.todo-color-opt').forEach(opt => {
-      opt.addEventListener('click', async (e) => {
-        e.stopPropagation()
-        const item = todos.find(t => t._id === opt.closest('.todo-item').dataset.id)
-        if (!item) return
-        const color = opt.dataset.color
-        if ((item.color || '') === color) return
-        item.color = color || ''
-        item.updatedAt = new Date().toISOString()
-        await saveTodo(item)
-        sortTodos()
         renderList()
       })
     })
