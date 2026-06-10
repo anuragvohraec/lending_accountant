@@ -34,18 +34,16 @@ function fmtDate(iso) {
 }
 
 const COLORS = [
-  { value: '', label: 'None', dot: 'bg-gray-300 border-2 border-gray-400' },
   { value: 'red', label: 'Red', dot: 'bg-red-400' },
-  { value: 'green', label: 'Green', dot: 'bg-green-400' },
-  { value: 'grey', label: 'Grey', dot: 'bg-gray-400' },
   { value: 'yellow', label: 'Yellow', dot: 'bg-yellow-400' },
+  { value: 'green', label: 'Green', dot: 'bg-green-400' },
+  { value: '', label: 'None', dot: 'bg-gray-300 border-2 border-gray-400' },
 ]
 
 function headerBg(color) {
   return color === 'red' ? 'bg-red-100/80'
-    : color === 'green' ? 'bg-green-100/80'
-    : color === 'grey' ? 'bg-gray-200/80'
     : color === 'yellow' ? 'bg-yellow-100/80'
+    : color === 'green' ? 'bg-green-100/80'
     : 'bg-gray-50/80'
 }
 
@@ -83,7 +81,7 @@ export async function renderTodos(container, navigate) {
     const mode = currentSort
     todos.sort((a, b) => {
       if (mode === 'color') {
-        const order = ['', 'red', 'green', 'grey', 'yellow']
+        const order = ['red', 'yellow', 'green', '']
         return order.indexOf(a.color || '') - order.indexOf(b.color || '')
       }
       if (mode === 'target') {
@@ -177,9 +175,8 @@ export async function renderTodos(container, navigate) {
       const cd = String(created.getDate()).padStart(2, '0') + '/' + String(created.getMonth() + 1).padStart(2, '0') + '/' + String(created.getFullYear()).slice(-2)
       const cc = t.color || ''
       const dotClass = cc === 'red' ? 'bg-red-400'
-        : cc === 'green' ? 'bg-green-400'
-        : cc === 'grey' ? 'bg-gray-400'
         : cc === 'yellow' ? 'bg-yellow-400'
+        : cc === 'green' ? 'bg-green-400'
         : 'bg-gray-300 border-2 border-gray-400'
       return `
         <div class="card !p-0 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
