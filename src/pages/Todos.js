@@ -155,7 +155,12 @@ export async function renderTodos(container, navigate) {
               <span class="text-[10px] text-gray-400">${cd}</span>
               <div class="relative">
                 <button class="todo-color-trigger w-4 h-4 rounded-full ${dotClass}"></button>
-                <div class="todo-color-popover hidden absolute bottom-full right-0 mb-1 p-1.5 bg-white rounded-lg shadow-xl border border-gray-200 flex gap-1 z-20"></div>
+                <div class="todo-color-popover hidden absolute bottom-full right-0 mb-1 p-1.5 bg-white rounded-lg shadow-xl border border-gray-200 flex gap-1 z-20">
+                  ${COLORS.map(c => {
+                    const active = (t.color || '') === c.value
+                    return `<button class="todo-color-opt w-4 h-4 rounded-full ${c.dot} flex-shrink-0 ${active ? 'ring-2 ring-offset-1 ring-primary' : ''}" data-color="${c.value}" title="${c.label}"></button>`
+                  }).join('')}
+                </div>
               </div>
             </div>
           </div>
@@ -204,25 +209,29 @@ export async function renderTodos(container, navigate) {
 
         document.querySelectorAll('.todo-color-popover:not(.hidden)').forEach(p => p.classList.add('hidden'))
 
-        popover.innerHTML = COLORS.map(c => {
-          const active = (item.color || '') === c.value
-          return `<button class="w-4 h-4 rounded-full ${c.dot} ${active ? 'ring-2 ring-offset-1 ring-primary' : ''} flex-shrink-0" data-color="${c.value}" title="${c.label}"></button>`
-        }).join('')
+        popover.querySelectorAll('.todo-color-opt').forEach(opt => {
+          const active = (item.color || '') === opt.dataset.color
+          opt.classList.toggle('ring-2', active)
+          opt.classList.toggle('ring-offset-1', active)
+          opt.classList.toggle('ring-primary', active)
+        })
         popover.classList.remove('hidden')
         openColorPopover = { trigger, popover }
+      })
+    })
 
-        popover.querySelectorAll('button').forEach(opt => {
-          opt.addEventListener('click', async (e2) => {
-            e2.stopPropagation()
-            const color = opt.dataset.color
-            if ((item.color || '') === color) return
-            item.color = color || ''
-            item.updatedAt = new Date().toISOString()
-            await saveTodo(item)
-            sortTodos()
-            renderList()
-          })
-        })
+    el.querySelectorAll('.todo-color-opt').forEach(opt => {
+      opt.addEventListener('click', async (e) => {
+        e.stopPropagation()
+        const item = todos.find(t => t._id === opt.closest('.todo-item').dataset.id)
+        if (!item) return
+        const color = opt.dataset.color
+        if ((item.color || '') === color) return
+        item.color = color || ''
+        item.updatedAt = new Date().toISOString()
+        await saveTodo(item)
+        sortTodos()
+        renderList()
       })
     })
 
