@@ -43,7 +43,7 @@ export async function renderTodos(container, navigate) {
         <div class="flex-1">
           <input class="input text-sm w-full" id="todo-search" placeholder="Search notes (regex)...">
         </div>
-        <button class="btn-icon text-gray-400 hover:text-primary transition-colors ${showClosed ? 'text-primary' : ''}" id="todo-show-closed" title="Include closed">
+        <button class="btn-icon text-gray-400 hover:text-primary transition-colors" id="todo-show-closed" title="Include closed">
           <ion-icon name="archive-outline" class="text-xl"></ion-icon>
         </button>
       </div>
