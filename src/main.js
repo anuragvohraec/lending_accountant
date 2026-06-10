@@ -17,8 +17,9 @@ registerRoute('party-detail', renderPartyDetail)
 registerRoute('search', renderSearch)
 registerRoute('settings', renderSettings)
 
+let exitConfirmed = false
+
 async function init() {
-  let exitConfirmed = false
   history.pushState(null, '', location.href)
   window.addEventListener('popstate', () => {
     if (exitConfirmed) return
