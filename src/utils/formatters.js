@@ -46,6 +46,16 @@ export function formatDateTime(dateStr) {
   return toDDMMYY(new Date(dateStr))
 }
 
+export function formatTimestamp(dateStr) {
+  if (!dateStr) return '-'
+  const d = new Date(dateStr)
+  const hrs = d.getHours()
+  const mins = d.getMinutes().toString().padStart(2, '0')
+  const ampm = hrs >= 12 ? 'PM' : 'AM'
+  const h12 = hrs % 12 || 12
+  return toDDMMYY(d) + ' ' + h12 + ':' + mins + ' ' + ampm
+}
+
 export function formatDateShort(dateStr) {
   if (!dateStr) return '-'
   const d = new Date(dateStr)

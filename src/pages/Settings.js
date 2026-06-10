@@ -4,7 +4,8 @@ import { showConfirm, showPrompt } from '../components/Modal.js'
 import { exportBackup, importBackup } from '../services/export.js'
 import { isLockEnabled, getLockMethod, webauthnAvailable, setupWebAuthn, setPin, clearAuth } from '../services/pin.js'
 import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers, getAllAuditLogs } from '../db/database.js'
-import { formatDateTime } from '../utils/formatters.js'
+import { formatTimestamp } from '../utils/formatters.js'
+import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 import { startSync, stopSync, getSyncState, onSyncStatus, clearSyncListeners } from '../services/sync.js'
 
 export async function renderSettings(container, navigate) {
@@ -134,6 +135,12 @@ export async function renderSettings(container, navigate) {
 
       <div class="card">
         <h3 class="font-semibold text-sm mb-3">Audit Log</h3>
+        <div class="flex items-center gap-1.5 mb-2 flex-wrap">
+          ${dateInputHTML({id: 'audit-from', value: ''})}
+          <span class="text-xs text-gray-400">to</span>
+          ${dateInputHTML({id: 'audit-to', value: ''})}
+          <button class="btn-ghost text-xs px-2 py-1" id="audit-filter-btn">Filter</button>
+        </div>
         <div id="audit-log" class="space-y-1 max-h-48 overflow-y-auto"></div>
       </div>
     </div>
@@ -167,19 +174,44 @@ export async function renderSettings(container, navigate) {
     if (window.forceSWUpdate) window.forceSWUpdate()
   })
 
-  const auditLogs = await getAuditLogs(20)
-  const auditEl = document.getElementById('audit-log')
-  if (auditLogs.length === 0) {
-    auditEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No audit logs yet</p>'
-  } else {
-    auditEl.innerHTML = auditLogs.map((log) => `
-      <div class="flex items-start gap-2 py-1.5 text-xs border-b border-gray-50 last:border-0">
-        <span class="text-gray-400 shrink-0 w-16">${formatDateTime(log.timestamp).split(',')[0]}</span>
-        <span class="capitalize text-gray-500 font-medium">${log.action}</span>
-        <span class="text-gray-400 truncate">${log.details || log.entityType}</span>
-      </div>
-    `).join('')
+  setupDateInput('audit-from')
+  setupDateInput('audit-to')
+
+  async function renderAuditLogs(fromDate, toDate) {
+    const auditEl = document.getElementById('audit-log')
+    let logs
+    if (fromDate || toDate) {
+      const all = await getAllAuditLogs()
+      logs = all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      if (fromDate) logs = logs.filter(l => l.timestamp >= fromDate)
+      if (toDate) logs = logs.filter(l => l.timestamp.slice(0, 10) <= toDate)
+      auditEl.classList.remove('max-h-48')
+    } else {
+      logs = await getAuditLogs(20)
+      auditEl.classList.add('max-h-48')
+    }
+    if (logs.length === 0) {
+      auditEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No audit logs found</p>'
+    } else {
+      auditEl.innerHTML = logs.map((log) => `
+        <div class="flex flex-col gap-0.5 py-1.5 text-xs border-b border-gray-50 last:border-0">
+          <div class="flex items-start gap-2">
+            <span class="text-gray-400 shrink-0 w-24">${formatTimestamp(log.timestamp)}</span>
+            <span class="capitalize text-gray-500 font-medium shrink-0">${log.action}</span>
+          </div>
+          <div class="text-gray-400 pl-0 break-words whitespace-pre-wrap">${log.details || log.entityType}</div>
+        </div>
+      `).join('')
+    }
   }
+
+  document.getElementById('audit-filter-btn').addEventListener('click', () => {
+    const from = getDateInputValue('audit-from')
+    const to = getDateInputValue('audit-to')
+    renderAuditLogs(from || null, to || null)
+  })
+
+  renderAuditLogs()
 
   document.getElementById('toggle-lock')?.addEventListener('click', async () => {
     const enabled = await isLockEnabled()
