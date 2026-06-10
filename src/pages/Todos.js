@@ -1,10 +1,38 @@
 import { renderHeader } from '../components/Header.js'
 import { getAllTodos, saveTodo, deleteTodo } from '../db/database.js'
 import { formatDate } from '../utils/formatters.js'
-import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
 import { showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { logAction } from '../services/audit.js'
+
+function onDoubleTap(el, fn) {
+  let lastTouch = 0
+  el.addEventListener('touchend', (e) => {
+    const now = Date.now()
+    if (now - lastTouch < 350 && lastTouch > 0) {
+      e.preventDefault()
+      fn(e)
+    }
+    lastTouch = now
+  }, { passive: false })
+  el.addEventListener('dblclick', fn)
+}
+
+function escHtml(str) {
+  if (!str) return ''
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function todayISO() {
+  const d = new Date()
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+function fmtDate(iso) {
+  if (!iso) return ''
+  const parts = iso.slice(0, 10).split('-')
+  return parts[2] + '/' + parts[1] + '/' + parts[0].slice(-2)
+}
 
 export async function renderTodos(container, navigate) {
   renderHeader('ToDo')
@@ -53,25 +81,19 @@ export async function renderTodos(container, navigate) {
       const cd = String(created.getDate()).padStart(2, '0') + '/' + String(created.getMonth() + 1).padStart(2, '0') + '/' + String(created.getFullYear()).slice(-2)
       return `
         <div class="card p-3 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
-          <div class="flex items-start gap-2">
-            <div class="flex flex-col items-center gap-1 pt-0.5">
-              <button class="btn-icon todo-toggle ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
-                <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-xl"></ion-icon>
-              </button>
-              <button class="btn-icon text-gray-300 hover:text-red-400 todo-delete" title="Delete">
-                <ion-icon name="trash-outline" class="text-base"></ion-icon>
-              </button>
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <button class="btn-icon todo-toggle ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
+              <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-xl"></ion-icon>
+            </button>
+            <div class="todo-target-date text-xs font-medium text-center cursor-pointer ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
+              ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-2 mb-1">
-                <div class="todo-target-date text-xs font-medium ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}" contenteditable="false">
-                  ${t.targetDate ? formatDate(t.targetDate) : 'Set target date'}
-                </div>
-                <span class="text-[10px] text-gray-400">${cd}</span>
-              </div>
-              <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700" contenteditable="false">${escHtml(t.note || '')}</div>
-            </div>
+            <button class="btn-icon text-gray-300 hover:text-red-400 todo-delete" title="Delete">
+              <ion-icon name="trash-outline" class="text-base"></ion-icon>
+            </button>
           </div>
+          <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 mb-1 cursor-pointer select-none">${escHtml(t.note || '')}</div>
+          <div class="text-[10px] text-gray-400">${cd}</div>
         </div>
       `
     }).join('')
@@ -103,16 +125,14 @@ export async function renderTodos(container, navigate) {
     })
 
     el.querySelectorAll('.todo-target-date').forEach(el => {
-      el.addEventListener('dblclick', () => {
-        if (el.contentEditable === 'true') return
+      onDoubleTap(el, () => {
         const item = todos.find(t => t._id === el.dataset.id)
         if (!item) return
         const current = item.targetDate ? item.targetDate.slice(0, 10) : ''
         const input = document.createElement('input')
         input.type = 'date'
-        input.className = 'input text-xs py-0.5 px-1 w-auto'
+        input.className = 'input text-xs py-0.5 px-1 w-32 text-center'
         input.value = current
-        input.min = new Date().toISOString().split('T')[0]
         el.innerHTML = ''
         el.appendChild(input)
         input.focus()
@@ -127,14 +147,16 @@ export async function renderTodos(container, navigate) {
     })
 
     el.querySelectorAll('.todo-note').forEach(noteEl => {
-      noteEl.addEventListener('dblclick', () => {
-        if (noteEl.contentEditable === 'true') return
-        noteEl.contentEditable = 'true'
-        noteEl.focus()
+      onDoubleTap(noteEl, () => {
         const item = todos.find(t => t._id === noteEl.closest('.todo-item').dataset.id)
         if (!item) return
+        noteEl.contentEditable = 'true'
+        noteEl.classList.remove('cursor-pointer', 'select-none')
+        noteEl.focus()
+
         const save = async () => {
           noteEl.contentEditable = 'false'
+          noteEl.classList.add('cursor-pointer', 'select-none')
           const val = noteEl.textContent.trim()
           if (val && val !== (item.note || '')) {
             item.note = val
@@ -157,7 +179,6 @@ export async function renderTodos(container, navigate) {
   document.getElementById('todo-search').addEventListener('input', renderList)
   document.getElementById('todo-show-closed').addEventListener('change', renderList)
 
-  // FAB
   const fab = document.createElement('div')
   fab.id = 'app-fab'
   fab.className = 'fixed bottom-20 right-4 z-50'
@@ -165,20 +186,13 @@ export async function renderTodos(container, navigate) {
   document.body.appendChild(fab)
 
   document.getElementById('todo-fab').addEventListener('click', async () => {
-    const now = new Date()
-    const note = 'New todo'
-    await saveTodo({ note, targetDate: '', status: 'open' })
+    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open' })
     todos = await getAllTodos()
     todos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    logAction('create', 'todo', '', `Created todo: ${note}`)
-    showToast('ToDo added — double-click note to edit')
+    logAction('create', 'todo', '', 'Created todo: New todo')
+    showToast('ToDo added — double-tap note to edit')
     renderList()
   })
 
   renderList()
-}
-
-function escHtml(str) {
-  if (!str) return ''
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
