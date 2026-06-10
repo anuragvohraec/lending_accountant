@@ -343,10 +343,10 @@ export async function renderDashboard(container) {
       const summaryParts = Object.entries(partySummary).map(([name, amt]) => `${name}: ₹${Math.round(amt * 100) / 100}`)
       logAction('charge', 'interest', chargedIds.join(','), `Bulk interest charged till ${toDate} — Total: ₹${Math.round(totalAmount * 100) / 100}. ${summaryParts.join('; ')}`)
       lastBulkCharge = { ids: chargedIds, parties: chargedParties, count: charged, total: totalAmount, date: toDate }
-      document.getElementById('bulk-interest-btn')?.classList.add('hidden')
-      const undoBtn = document.getElementById('bulk-undo-btn')
-      if (undoBtn) undoBtn.classList.remove('hidden')
       showToast(`Interest charged: ₹${Math.round(totalAmount * 100) / 100} across ${charged} ledger(s)${errorCount ? `, ${errorCount} error(s)` : ''}`, 'success')
+      await renderDashboard(container)
+      const undoBtn = document.getElementById('bulk-undo-btn')
+      if (undoBtn) { undoBtn.classList.remove('hidden'); document.getElementById('bulk-interest-btn')?.classList.add('hidden') }
     }
   })
 
