@@ -25,7 +25,7 @@ export function generateInterestReport(allTxns, parties, allLedgers) {
     const totalCharged = charges.reduce((s, t) => s + t.amount, 0)
     const totalPaid = payments.reduce((s, t) => s + t.amount, 0)
     const netPending = Math.round((totalCharged - totalPaid) * 100) / 100
-    if (Math.abs(netPending) < 0.01) continue
+    if (Math.round(Math.abs(netPending)) < 1) continue
     reportData.push({
       party,
       ledger,
