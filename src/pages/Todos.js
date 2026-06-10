@@ -96,6 +96,16 @@ export async function renderTodos(container, navigate) {
 
   sortTodos()
 
+  let openColorPopover = null
+  document.addEventListener('click', (e) => {
+    if (!openColorPopover) return
+    const { trigger, popover } = openColorPopover
+    if (!trigger.parentNode.contains(e.target)) {
+      popover.classList.add('hidden')
+      openColorPopover = null
+    }
+  })
+
   function renderList() {
     const searchVal = document.getElementById('todo-search').value
     const showClosed = document.getElementById('todo-show-closed').dataset.showClosed === 'true'
@@ -185,21 +195,23 @@ export async function renderTodos(container, navigate) {
         const item = todos.find(t => t._id === trigger.closest('.todo-item').dataset.id)
         if (!item) return
 
-        const existing = trigger.parentNode.querySelector('.todo-color-popover')
-        if (!existing.classList.contains('hidden')) {
-          existing.classList.add('hidden')
+        const popover = trigger.parentNode.querySelector('.todo-color-popover')
+        if (!popover.classList.contains('hidden')) {
+          popover.classList.add('hidden')
+          if (openColorPopover?.popover === popover) openColorPopover = null
           return
         }
 
         document.querySelectorAll('.todo-color-popover:not(.hidden)').forEach(p => p.classList.add('hidden'))
 
-        existing.innerHTML = COLORS.map(c => {
+        popover.innerHTML = COLORS.map(c => {
           const active = (item.color || '') === c.value
           return `<button class="w-4 h-4 rounded-full ${c.dot} ${active ? 'ring-2 ring-offset-1 ring-primary' : ''} flex-shrink-0" data-color="${c.value}" title="${c.label}"></button>`
         }).join('')
-        existing.classList.remove('hidden')
+        popover.classList.remove('hidden')
+        openColorPopover = { trigger, popover }
 
-        existing.querySelectorAll('button').forEach(opt => {
+        popover.querySelectorAll('button').forEach(opt => {
           opt.addEventListener('click', async (e2) => {
             e2.stopPropagation()
             const color = opt.dataset.color
@@ -211,14 +223,6 @@ export async function renderTodos(container, navigate) {
             renderList()
           })
         })
-
-        const closePopover = (e2) => {
-          if (!trigger.parentNode.contains(e2.target)) {
-            existing.classList.add('hidden')
-            document.removeEventListener('click', closePopover, true)
-          }
-        }
-        setTimeout(() => document.addEventListener('click', closePopover, true), 0)
       })
     })
 
