@@ -6,6 +6,7 @@ import { renderParties } from './pages/Parties.js'
 import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
+import { renderTodos } from './pages/Todos.js'
 import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
 import { showToast } from './components/Toast.js'
 import { logAction } from './services/audit.js'
@@ -17,6 +18,7 @@ registerRoute('parties', renderParties)
 registerRoute('party-detail', renderPartyDetail)
 registerRoute('search', renderSearch)
 registerRoute('settings', renderSettings)
+registerRoute('todos', renderTodos)
 
 let exitConfirmed = false
 
@@ -43,7 +45,7 @@ async function init() {
     await showAuthLock()
   }
 
-  initRouter()
+  await initRouter()
 }
 
 async function showAuthLock() {

@@ -6,7 +6,7 @@ export function registerRoute(name, renderFn) {
   routes[name] = renderFn
 }
 
-export function navigate(name, params = {}) {
+export async function navigate(name, params = {}) {
   const main = document.getElementById('app-main')
   main.innerHTML = ''
   window.scrollTo(0, 0)
@@ -20,10 +20,10 @@ export function navigate(name, params = {}) {
     return
   }
 
-  renderNav(name, (route) => navigate(route))
+  await renderNav(name, (route) => navigate(route))
   renderFn(main, navigate, params)
 }
 
-export function initRouter() {
-  navigate('dashboard')
+export async function initRouter() {
+  await navigate('dashboard')
 }
