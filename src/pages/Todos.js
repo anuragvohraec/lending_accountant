@@ -39,14 +39,13 @@ export async function renderTodos(container, navigate) {
 
   container.innerHTML = `
     <div class="px-4 pb-24">
-      <div class="mb-3">
-        <input class="input text-sm" id="todo-search" placeholder="Search notes (regex)...">
-      </div>
       <div class="flex items-center gap-2 mb-3">
-        <label class="flex items-center gap-1.5 text-xs text-gray-500">
-          <input type="checkbox" id="todo-show-closed" />
-          Show closed
-        </label>
+        <div class="flex-1">
+          <input class="input text-sm w-full" id="todo-search" placeholder="Search notes (regex)...">
+        </div>
+        <button class="btn-icon text-gray-400 hover:text-primary transition-colors ${showClosed ? 'text-primary' : ''}" id="todo-show-closed" title="Include closed">
+          <ion-icon name="archive-outline" class="text-xl"></ion-icon>
+        </button>
       </div>
       <div id="todo-list" class="space-y-2"></div>
     </div>
@@ -57,7 +56,7 @@ export async function renderTodos(container, navigate) {
 
   function renderList() {
     const searchVal = document.getElementById('todo-search').value
-    const showClosed = document.getElementById('todo-show-closed').checked
+    const showClosed = document.getElementById('todo-show-closed').dataset.showClosed === 'true'
     const el = document.getElementById('todo-list')
 
     let filtered = todos
@@ -207,7 +206,13 @@ export async function renderTodos(container, navigate) {
   }
 
   document.getElementById('todo-search').addEventListener('input', renderList)
-  document.getElementById('todo-show-closed').addEventListener('change', renderList)
+  document.getElementById('todo-show-closed').addEventListener('click', (e) => {
+    const btn = e.currentTarget
+    const isActive = btn.dataset.showClosed === 'true'
+    btn.dataset.showClosed = isActive ? 'false' : 'true'
+    btn.classList.toggle('text-primary', !isActive)
+    renderList()
+  })
 
   const fab = document.createElement('div')
   fab.id = 'app-fab'
