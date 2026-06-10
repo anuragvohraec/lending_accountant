@@ -1,5 +1,6 @@
 import { getDb } from '../db/database.js'
 import { getSettings } from '../db/database.js'
+import { logAction } from './audit.js'
 
 let syncHandler = null
 let statusListeners = []
@@ -35,13 +36,20 @@ export async function startSync() {
   }
 
   const finalUrl = settings.couchUrl.replace(/\/+$/, '') + (settings.couchDbName ? '/' + settings.couchDbName : '')
+  logAction('create', 'sync', finalUrl, 'Started live sync to ' + finalUrl)
   syncHandler = db.sync(finalUrl, options)
 
   syncHandler.on('change', (info) => notify({ type: 'change', dir: info.direction, docs: info.change.docs.length }))
   syncHandler.on('paused', (err) => notify({ type: 'paused', err: err ? err.message : null }))
   syncHandler.on('active', () => notify({ type: 'active' }))
-  syncHandler.on('error', (err) => notify({ type: 'error', message: err.message }))
-  syncHandler.on('complete', () => notify({ type: 'complete' }))
+  syncHandler.on('error', (err) => {
+    logAction('error', 'sync', finalUrl, 'Sync error: ' + err.message)
+    notify({ type: 'error', message: err.message })
+  })
+  syncHandler.on('complete', () => {
+    logAction('complete', 'sync', finalUrl, 'Live sync completed')
+    notify({ type: 'complete' })
+  })
 
   notify({ type: 'started' })
 }
@@ -51,5 +59,6 @@ export function stopSync() {
     syncHandler.cancel()
     syncHandler = null
   }
+  logAction('stop', 'sync', '', 'Live sync stopped')
   notify({ type: 'stopped' })
 }

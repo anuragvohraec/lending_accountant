@@ -8,6 +8,7 @@ import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
 import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
 import { showToast } from './components/Toast.js'
+import { logAction } from './services/audit.js'
 
 registerRoute('dashboard', renderDashboard)
 registerRoute('money-sources', renderMoneySources)
@@ -130,6 +131,7 @@ if ('serviceWorker' in navigator) {
 // updateViaCache:'none' (set above) ensures sw.js is fetched fresh on next registration
 window.forceSWUpdate = async function () {
   showToast('Refreshing app...')
+  logAction('update', 'app', '', 'App update initiated — clearing caches and reloading')
   exitConfirmed = true
   if ('caches' in window) {
     const keys = await caches.keys()
