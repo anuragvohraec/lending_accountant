@@ -160,7 +160,7 @@ function renderLedger() {
   if (_filterDateTo) filtered = filtered.filter((e) => e.date <= _filterDateTo)
   if (_filterParty) {
     filtered = filtered.filter((e) => {
-      if (e.entryType === 'source') return false
+      if (e.entryType === 'source') return e.partyId === _filterParty
       const party = _allParties.find((p) => p._id === e.partyId)
       return party?._id === _filterParty || party?.name === _filterParty
     })
@@ -171,8 +171,12 @@ function renderLedger() {
   const start = (_page - 1) * _perPage
   const pageEntries = filtered.slice(start, start + _perPage)
 
-  const partiesInLedger = [...new Set(entries.filter((e) => e.entryType === 'principal').map((e) => {
-    const party = _allParties.find((p) => p._id === e.partyId)
+  const partiesInLedger = [...new Set(entries.filter((e) => {
+    if (e.entryType === 'principal') return true
+    return e.entryType === 'source' && e.partyId
+  }).map((e) => {
+    const pid = e.entryType === 'source' ? e.partyId : e.partyId
+    const party = _allParties.find((p) => p._id === pid)
     return party ? { id: party._id, name: party.name } : null
   }).filter(Boolean).map((p) => p.id))].map((id) => _allParties.find((p) => p._id === id)).filter(Boolean)
 

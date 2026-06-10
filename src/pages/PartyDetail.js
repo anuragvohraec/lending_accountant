@@ -1174,6 +1174,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
         amount: alloc.amount,
         date: paymentDate,
         description: `Interest payment from ${party.name}`,
+        partyId: party._id,
       })
     }
   }
