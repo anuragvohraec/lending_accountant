@@ -356,6 +356,7 @@ export async function saveTodo(data) {
   }
   data._id = 'todo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   data.createdAt = new Date().toISOString()
+  data.updatedAt = data.createdAt
   return db.put(data)
 }
 

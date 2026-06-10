@@ -1,6 +1,5 @@
 import { renderHeader } from '../components/Header.js'
 import { getAllTodos, saveTodo, deleteTodo } from '../db/database.js'
-import { formatDate } from '../utils/formatters.js'
 import { showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { logAction } from '../services/audit.js'
@@ -34,12 +33,28 @@ function fmtDate(iso) {
   return parts[2] + '/' + parts[1] + '/' + parts[0].slice(-2)
 }
 
+const COLORS = [
+  { value: '', label: 'None', dot: 'bg-gray-300 border-2 border-gray-400' },
+  { value: 'red', label: 'Red', dot: 'bg-red-400' },
+  { value: 'green', label: 'Green', dot: 'bg-green-400' },
+  { value: 'grey', label: 'Grey', dot: 'bg-gray-400' },
+  { value: 'yellow', label: 'Yellow', dot: 'bg-yellow-400' },
+]
+
+function headerBg(color) {
+  return color === 'red' ? 'bg-red-100/80'
+    : color === 'green' ? 'bg-green-100/80'
+    : color === 'grey' ? 'bg-gray-200/80'
+    : color === 'yellow' ? 'bg-yellow-100/80'
+    : 'bg-gray-50/80'
+}
+
 export async function renderTodos(container, navigate) {
   renderHeader('ToDo')
 
   container.innerHTML = `
     <div class="px-4 pb-24">
-      <div class="flex items-center gap-2 mb-3">
+      <div class="flex items-center gap-2 mb-2">
         <div class="flex-1">
           <input class="input text-sm w-full" id="todo-search" placeholder="Search notes (regex)...">
         </div>
@@ -47,12 +62,39 @@ export async function renderTodos(container, navigate) {
           <ion-icon name="archive-outline" class="text-xl"></ion-icon>
         </button>
       </div>
+      <div class="mb-3">
+        <select class="input text-xs w-full" id="todo-sort">
+          <option value="updated">Last updated</option>
+          <option value="color">Color</option>
+          <option value="target">Target date</option>
+        </select>
+      </div>
       <div id="todo-list" class="space-y-2"></div>
     </div>
   `
 
   let todos = await getAllTodos()
-  todos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+
+  function sortTodos() {
+    const mode = document.getElementById('todo-sort').value
+    todos.sort((a, b) => {
+      if (mode === 'color') {
+        const order = ['', 'red', 'green', 'grey', 'yellow']
+        return order.indexOf(a.color || '') - order.indexOf(b.color || '')
+      }
+      if (mode === 'target') {
+        if (!a.targetDate && !b.targetDate) return 0
+        if (!a.targetDate) return 1
+        if (!b.targetDate) return -1
+        return a.targetDate.localeCompare(b.targetDate)
+      }
+      const au = a.updatedAt || a.createdAt
+      const bu = b.updatedAt || b.createdAt
+      return new Date(bu) - new Date(au)
+    })
+  }
+
+  sortTodos()
 
   function renderList() {
     const searchVal = document.getElementById('todo-search').value
@@ -80,20 +122,27 @@ export async function renderTodos(container, navigate) {
       const cd = String(created.getDate()).padStart(2, '0') + '/' + String(created.getMonth() + 1).padStart(2, '0') + '/' + String(created.getFullYear()).slice(-2)
       return `
         <div class="card !p-0 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
-          <div class="flex items-center justify-between gap-2 px-2.5 py-1 bg-gray-50/80 rounded-t-xl">
+          <div class="flex items-center justify-between gap-2 px-2.5 py-1 ${headerBg(t.color)} rounded-t-xl">
             <button class="todo-toggle p-1 rounded-lg ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
               <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-lg"></ion-icon>
             </button>
-            <div class="todo-target-date text-[11px] font-medium text-center cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
-              ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
+            <div class="flex items-center gap-1">
+              ${COLORS.map(c => `
+                <button class="todo-color w-3.5 h-3.5 rounded-full ${c.dot} ${(t.color || '') === c.value ? 'ring-2 ring-offset-1 ring-primary' : 'ring-1 ring-gray-300'}" data-color="${c.value}" title="${c.label}"></button>
+              `).join('')}
             </div>
             <button class="todo-delete p-1 rounded-lg text-gray-300 hover:text-red-400" title="Delete">
               <ion-icon name="trash-outline" class="text-base"></ion-icon>
             </button>
           </div>
           <div class="px-2.5 py-2">
-            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 mb-1.5 cursor-pointer select-none">${escHtml(t.note || '')}</div>
-            <div class="text-[10px] text-gray-400">${cd}</div>
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <div class="todo-target-date text-[11px] font-medium cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
+                ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
+              </div>
+              <span class="text-[10px] text-gray-400">${cd}</span>
+            </div>
+            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none">${escHtml(t.note || '')}</div>
           </div>
         </div>
       `
@@ -125,6 +174,20 @@ export async function renderTodos(container, navigate) {
       })
     })
 
+    el.querySelectorAll('.todo-color').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const item = todos.find(t => t._id === btn.closest('.todo-item').dataset.id)
+        if (!item) return
+        const color = btn.dataset.color
+        if ((item.color || '') === color) return
+        item.color = color || ''
+        item.updatedAt = new Date().toISOString()
+        await saveTodo(item)
+        sortTodos()
+        renderList()
+      })
+    })
+
     el.querySelectorAll('.todo-target-date').forEach(el => {
       onDoubleTap(el, () => {
         const item = todos.find(t => t._id === el.dataset.id)
@@ -141,6 +204,7 @@ export async function renderTodos(container, navigate) {
           item.targetDate = input.value || ''
           item.updatedAt = new Date().toISOString()
           await saveTodo(item)
+          sortTodos()
           renderList()
         })
         input.addEventListener('change', () => input.blur())
@@ -213,6 +277,10 @@ export async function renderTodos(container, navigate) {
     btn.classList.toggle('text-primary', !isActive)
     renderList()
   })
+  document.getElementById('todo-sort').addEventListener('change', () => {
+    sortTodos()
+    renderList()
+  })
 
   const fab = document.createElement('div')
   fab.id = 'app-fab'
@@ -221,9 +289,9 @@ export async function renderTodos(container, navigate) {
   document.body.appendChild(fab)
 
   document.getElementById('todo-fab').addEventListener('click', async () => {
-    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open' })
+    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open', color: '' })
     todos = await getAllTodos()
-    todos.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    sortTodos()
     logAction('create', 'todo', '', 'Created todo: New todo')
     showToast('ToDo added — double-tap note to edit')
     renderList()
