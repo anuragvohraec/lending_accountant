@@ -4,7 +4,7 @@ import { showConfirm, showPrompt } from '../components/Modal.js'
 import { exportBackup, importBackup } from '../services/export.js'
 import { isLockEnabled, getLockMethod, webauthnAvailable, setupWebAuthn, setPin, clearAuth } from '../services/pin.js'
 import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers, getAllAuditLogs } from '../db/database.js'
-import { formatTimestamp } from '../utils/formatters.js'
+import { formatTime } from '../utils/formatters.js'
 import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 import { startSync, stopSync, getSyncState, onSyncStatus, clearSyncListeners } from '../services/sync.js'
 
@@ -193,15 +193,22 @@ export async function renderSettings(container, navigate) {
     if (logs.length === 0) {
       auditEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No audit logs found</p>'
     } else {
-      auditEl.innerHTML = logs.map((log) => `
+      auditEl.innerHTML = logs.map((log) => {
+        const d = new Date(log.timestamp)
+        const dd = String(d.getDate()).padStart(2, '0')
+        const mm = String(d.getMonth() + 1).padStart(2, '0')
+        const yy = String(d.getFullYear()).slice(-2)
+        const dateStr = dd + '/' + mm + '/' + yy
+        return `
         <div class="flex flex-col gap-0.5 py-1.5 text-xs border-b border-gray-50 last:border-0">
-          <div class="flex items-start gap-2">
-            <span class="text-gray-400 shrink-0 w-24">${formatTimestamp(log.timestamp)}</span>
-            <span class="capitalize text-gray-500 font-medium shrink-0">${log.action}</span>
+          <div class="flex items-center justify-between">
+            <span class="text-gray-400 font-medium">${dateStr}</span>
+            <span class="capitalize text-gray-500 font-medium">${log.action}</span>
           </div>
-          <div class="text-gray-400 pl-0 break-words whitespace-pre-wrap">${log.details || log.entityType}</div>
+          <div class="text-gray-400">${formatTime(log.timestamp)}</div>
+          <div class="text-gray-400 break-words whitespace-pre-wrap">${log.details || log.entityType}</div>
         </div>
-      `).join('')
+      `}).join('')
     }
   }
 
