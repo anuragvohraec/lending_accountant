@@ -234,6 +234,14 @@ export async function renderSettings(container, navigate) {
 
   renderAuditLogsForDate(new Date().toISOString().split('T')[0])
 
+  async function refreshDataAndAudit() {
+    const [s, p, t, col, st, l, al] = await Promise.all([
+      getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(), getLedgers(), getAllAuditLogs(),
+    ])
+    document.getElementById('data-count').textContent = (s.length + p.length + t.length + col.length + st.length + l.length + al.length) + ' records'
+    renderAuditLogsForDate(getCurrentAuditDate())
+  }
+
   document.getElementById('toggle-lock')?.addEventListener('click', async () => {
     const enabled = await isLockEnabled()
     if (enabled) {
@@ -301,10 +309,12 @@ export async function renderSettings(container, navigate) {
 
   const unsub = onSyncStatus((ev) => {
     if (ev.type === 'started') { syncMsg('Sync started', 'text-green-600'); toggleBtn.textContent = 'Stop Sync'; toggleBtn.className = 'btn-danger text-sm' }
-    else if (ev.type === 'stopped') { syncMsg('Sync stopped', 'text-gray-400'); toggleBtn.textContent = 'Start Sync'; toggleBtn.className = 'btn-outline text-sm' }
+    else if (ev.type === 'stopped') { syncMsg('Sync stopped', 'text-gray-400'); toggleBtn.textContent = 'Start Sync'; toggleBtn.className = 'btn-outline text-sm'; refreshDataAndAudit() }
     else if (ev.type === 'change') { syncMsg(`Synced ${ev.docs} doc(s) ${ev.dir}`, 'text-primary') }
-    else if (ev.type === 'error') { syncMsg(`Error: ${ev.message}`, 'text-red-500') }
-    else if (ev.type === 'paused') { ev.err ? syncMsg(`Paused: ${ev.err}`, 'text-amber-600') : syncMsg('Up to date', 'text-green-600') }
+    else if (ev.type === 'error') { syncMsg(`Error: ${ev.message}`, 'text-red-500'); refreshDataAndAudit() }
+    else if (ev.type === 'paused') {
+      if (ev.err) { syncMsg(`Paused: ${ev.err}`, 'text-amber-600') } else { syncMsg('Up to date', 'text-green-600'); refreshDataAndAudit() }
+    }
     else if (ev.type === 'active') { syncMsg('Syncing...', 'text-primary') }
   })
 
