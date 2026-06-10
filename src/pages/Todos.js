@@ -152,15 +152,39 @@ export async function renderTodos(container, navigate) {
       onDoubleTap(noteEl, () => {
         const item = todos.find(t => t._id === noteEl.closest('.todo-item').dataset.id)
         if (!item) return
+        const originalText = item.note || ''
         noteEl.contentEditable = 'true'
         noteEl.classList.remove('cursor-pointer', 'select-none')
         noteEl.focus()
 
+        const cancelBtn = document.createElement('button')
+        cancelBtn.className = 'absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-100 text-red-500 hover:bg-red-200 leading-none shadow-sm z-10'
+        cancelBtn.innerHTML = '<ion-icon name="close-outline" class="text-sm"></ion-icon>'
+        cancelBtn.title = 'Cancel edits'
+        noteEl.style.position = 'relative'
+        noteEl.appendChild(cancelBtn)
+
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          noteEl.textContent = originalText
+          finishEditing()
+        })
+
+        function finishEditing() {
+          if (cancelBtn.parentNode) cancelBtn.remove()
+          noteEl.style.position = ''
+          noteEl.contentEditable = 'false'
+          noteEl.classList.add('cursor-pointer', 'select-none')
+          renderList()
+        }
+
         const save = async () => {
+          if (cancelBtn.parentNode) cancelBtn.remove()
+          noteEl.style.position = ''
           noteEl.contentEditable = 'false'
           noteEl.classList.add('cursor-pointer', 'select-none')
           const val = noteEl.textContent.trim()
-          if (val && val !== (item.note || '')) {
+          if (val && val !== originalText) {
             item.note = val
             item.updatedAt = new Date().toISOString()
             await saveTodo(item)
@@ -171,8 +195,7 @@ export async function renderTodos(container, navigate) {
         }
         noteEl.addEventListener('blur', save, { once: true })
         noteEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') { noteEl.textContent = item.note || ''; noteEl.blur() }
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); noteEl.blur() }
+          if (e.key === 'Escape') { noteEl.textContent = originalText; noteEl.blur() }
         })
       })
     })
