@@ -56,13 +56,13 @@ export async function renderTodos(container, navigate) {
     <div class="px-4 pb-24">
       <div class="flex items-center gap-2 mb-3">
         <div class="flex-1">
-          <input class="input text-sm w-full" id="todo-search" placeholder="Search notes (regex)...">
+          <input class="input text-sm w-full" id="todo-search" placeholder="Search notes">
         </div>
         <div class="relative">
           <button class="btn-icon text-gray-400 hover:text-primary transition-colors" id="todo-sort-btn" title="Sort">
             <ion-icon name="funnel-outline" class="text-xl"></ion-icon>
           </button>
-          <div id="todo-sort-popover" class="hidden absolute bottom-full right-0 mb-1 py-1 bg-white rounded-lg shadow-xl border border-gray-200 z-20 min-w-[130px]">
+          <div id="todo-sort-popover" class="hidden absolute top-full right-0 mt-1 py-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 min-w-[130px]">
             <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="updated">Last updated</button>
             <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="color">Color</button>
             <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="target">Target date</button>
@@ -200,7 +200,7 @@ export async function renderTodos(container, navigate) {
               <span class="text-[10px] text-gray-400">${cd}</span>
               <div class="relative">
                 <button class="todo-color-trigger w-4 h-4 rounded-full ${dotClass}"></button>
-                <div class="todo-color-popover hidden absolute bottom-full right-0 mb-1 p-1.5 bg-white rounded-lg shadow-xl border border-gray-200 flex gap-1 z-20">
+                <div class="todo-color-popover hidden absolute bottom-full right-0 mb-1 p-1.5 bg-white rounded-lg shadow-xl border border-gray-200 flex gap-1 z-50">
                   ${COLORS.map(c => {
                     const active = (t.color || '') === c.value
                     return `<button class="todo-color-opt w-4 h-4 rounded-full ${c.dot} flex-shrink-0 ${active ? 'ring-2 ring-offset-1 ring-primary' : ''}" data-color="${c.value}" title="${c.label}"></button>`
