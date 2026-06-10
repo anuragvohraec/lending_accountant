@@ -54,29 +54,33 @@ export async function renderTodos(container, navigate) {
 
   container.innerHTML = `
     <div class="px-4 pb-24">
-      <div class="flex items-center gap-2 mb-2">
+      <div class="flex items-center gap-2 mb-3">
         <div class="flex-1">
           <input class="input text-sm w-full" id="todo-search" placeholder="Search notes (regex)...">
+        </div>
+        <div class="relative">
+          <button class="btn-icon text-gray-400 hover:text-primary transition-colors" id="todo-sort-btn" title="Sort">
+            <ion-icon name="funnel-outline" class="text-xl"></ion-icon>
+          </button>
+          <div id="todo-sort-popover" class="hidden absolute bottom-full right-0 mb-1 py-1 bg-white rounded-lg shadow-xl border border-gray-200 z-20 min-w-[130px]">
+            <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="updated">Last updated</button>
+            <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="color">Color</button>
+            <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="target">Target date</button>
+          </div>
         </div>
         <button class="btn-icon text-gray-400 hover:text-primary transition-colors" id="todo-show-closed" title="Include closed">
           <ion-icon name="archive-outline" class="text-xl"></ion-icon>
         </button>
-      </div>
-      <div class="mb-3">
-        <select class="input text-xs w-full" id="todo-sort">
-          <option value="updated">Last updated</option>
-          <option value="color">Color</option>
-          <option value="target">Target date</option>
-        </select>
       </div>
       <div id="todo-list" class="space-y-2"></div>
     </div>
   `
 
   let todos = await getAllTodos()
+  let currentSort = 'updated'
 
   function sortTodos() {
-    const mode = document.getElementById('todo-sort').value
+    const mode = currentSort
     todos.sort((a, b) => {
       if (mode === 'color') {
         const order = ['', 'red', 'green', 'grey', 'yellow']
@@ -324,9 +328,35 @@ export async function renderTodos(container, navigate) {
     btn.classList.toggle('text-primary', !isActive)
     renderList()
   })
-  document.getElementById('todo-sort').addEventListener('change', () => {
-    sortTodos()
-    renderList()
+  document.getElementById('todo-sort-btn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    const popover = document.getElementById('todo-sort-popover')
+    const isHidden = popover.classList.contains('hidden')
+    if (isHidden) {
+      popover.classList.remove('hidden')
+      popover.querySelectorAll('.todo-sort-opt').forEach(opt => {
+        opt.classList.toggle('font-semibold', opt.dataset.sort === currentSort)
+        opt.classList.toggle('text-primary', opt.dataset.sort === currentSort)
+      })
+    }
+  })
+
+  document.querySelectorAll('.todo-sort-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      currentSort = opt.dataset.sort
+      document.getElementById('todo-sort-popover').classList.add('hidden')
+      document.getElementById('todo-sort-btn').classList.add('text-primary')
+      sortTodos()
+      renderList()
+    })
+  })
+
+  document.addEventListener('click', (e) => {
+    const popover = document.getElementById('todo-sort-popover')
+    const btn = document.getElementById('todo-sort-btn')
+    if (!popover.classList.contains('hidden') && !btn.contains(e.target) && !popover.contains(e.target)) {
+      popover.classList.add('hidden')
+    }
   })
 
   const fab = document.createElement('div')
