@@ -1,7 +1,7 @@
 import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
 import { getOutstandingForParty, calculateMonthlyCharges, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
-import { saveTransaction } from '../db/database.js'
+import { saveTransaction, deleteTransaction } from '../db/database.js'
 import { logAction } from '../services/audit.js'
 import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
 import { generateTaxReport, renderTaxReportOverlay } from './TaxReport.js'
@@ -13,6 +13,7 @@ import { showToast } from '../components/Toast.js'
 import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
 import { escHtml } from '../utils/helpers.js'
 let charts = {}
+let lastBulkCharge = null
 
 function destroyCharts() {
   Object.values(charts).forEach((c) => { try { c.destroy() } catch {} })
@@ -44,10 +45,16 @@ export async function renderDashboard(container) {
           <ion-icon name="flash-outline" class="text-primary text-lg"></ion-icon>
         </div>
         <p class="text-[11px] text-gray-400 mb-3">Charge interest in bulk for multiple parties at once</p>
-        <button class="btn-outline btn-sm w-full" id="bulk-interest-btn">
-          <ion-icon name="flash-outline" class="text-sm mr-1"></ion-icon>
-          Charge Interest
-        </button>
+        <div id="bulk-charge-actions" class="space-y-2">
+          <button class="btn-outline btn-sm w-full" id="bulk-interest-btn">
+            <ion-icon name="flash-outline" class="text-sm mr-1"></ion-icon>
+            Charge Interest
+          </button>
+          <button class="btn-outline btn-sm w-full text-red-500 border-red-200 hover:bg-red-50 hidden" id="bulk-undo-btn">
+            <ion-icon name="arrow-undo-outline" class="text-sm mr-1"></ion-icon>
+            Undo Last Charge
+          </button>
+        </div>
       </div>
       <div id="dash-chart-section" class="card">
         <div class="flex items-center justify-between mb-3">
@@ -268,6 +275,8 @@ export async function renderDashboard(container) {
     const { toDate, partyIds } = result
 
     let charged = 0, totalAmount = 0, errorCount = 0
+    const chargedIds = []
+    const chargedParties = []
     showToast('Charging interest...', 'info')
 
     for (const pid of partyIds) {
@@ -314,6 +323,8 @@ export async function renderDashboard(container) {
           }
           const saved = await saveTransaction(data)
           logAction('charge', 'interest', saved.id, `Bulk interest charged for ${party.name} (${ledger.name}) from ${charges[0].fromDate} to ${toDate}: ₹${Math.round(totalInterest * 100) / 100}`)
+          chargedIds.push(saved.id)
+          chargedParties.push({ party: party.name, ledger: ledger.name })
           charged++
           totalAmount += totalInterest
         } catch (e) {
@@ -326,9 +337,31 @@ export async function renderDashboard(container) {
     if (charged === 0) {
       showToast('No interest to charge for selected parties', 'error')
     } else {
+      lastBulkCharge = { ids: chargedIds, parties: chargedParties, count: charged, total: totalAmount, date: toDate }
+      document.getElementById('bulk-interest-btn')?.classList.add('hidden')
+      const undoBtn = document.getElementById('bulk-undo-btn')
+      if (undoBtn) undoBtn.classList.remove('hidden')
       showToast(`Interest charged: ₹${Math.round(totalAmount * 100) / 100} across ${charged} ledger(s)${errorCount ? `, ${errorCount} error(s)` : ''}`, 'success')
-      renderDashboard(container)
     }
+  })
+
+  document.getElementById('bulk-undo-btn')?.addEventListener('click', async () => {
+    if (!lastBulkCharge || lastBulkCharge.ids.length === 0) return
+    const ids = [...lastBulkCharge.ids]
+    const info = lastBulkCharge
+    let deleted = 0, errs = 0
+    for (const id of ids) {
+      try {
+        await deleteTransaction(id)
+        deleted++
+      } catch { errs++ }
+    }
+    logAction('undo', 'interest', ids.join(','), `Undid bulk interest charge of ₹${Math.round(info.total * 100) / 100} (${info.count} ledger(s), ${info.date})`)
+    lastBulkCharge = null
+    document.getElementById('bulk-undo-btn')?.classList.add('hidden')
+    document.getElementById('bulk-interest-btn')?.classList.remove('hidden')
+    showToast(`Undone: ${deleted} charge(s) deleted${errs ? `, ${errs} error(s)` : ''}`, 'info')
+    renderDashboard(container)
   })
 
   document.querySelectorAll('.chart-period').forEach((btn) => {
