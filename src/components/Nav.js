@@ -2,8 +2,8 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: 'Home', icon: 'home-outline' },
   { id: 'money-sources', label: 'Sources', icon: 'wallet-outline' },
   { id: 'parties', label: 'Parties', icon: 'people-outline' },
-  { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', badge: true },
   { id: 'search', label: 'Search', icon: 'search-outline' },
+  { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', badge: true },
   { id: 'settings', label: 'Settings', icon: 'settings-outline' },
 ]
 
