@@ -1,5 +1,5 @@
 import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers } from '../db/database.js'
-import { formatCurrency, formatCurrencyFull, formatDate, formatDateShort } from '../utils/formatters.js'
+import { formatCurrency, formatCurrencyFull, formatDateShort, formatDate } from '../utils/formatters.js'
 import { getOutstandingForParty, calculateMonthlyCharges, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { saveTransaction, deleteTransaction } from '../db/database.js'
 import { logAction } from '../services/audit.js'
@@ -346,7 +346,7 @@ export async function renderDashboard(container) {
         partySummary[p.party] = (partySummary[p.party] || 0) + p.amount
       })
       const summaryParts = Object.entries(partySummary).map(([name, amt]) => `${name}: ₹${Math.round(amt * 100) / 100}`)
-      logAction('charge', 'interest', chargedIds.join(','), `Charged interest of ₹${Math.round(totalAmount * 100) / 100} across ${charged} ledger(s) till ${formatDate(toDate)}. ${summaryParts.join('; ')}`)
+      logAction('charge', 'interest', chargedIds.join(','), `Bulk interest charged till ${toDate} — Total: ₹${Math.round(totalAmount * 100) / 100}. ${summaryParts.join('; ')}`)
       lastBulkCharge = { ids: chargedIds, parties: chargedParties, count: charged, total: totalAmount, date: toDate }
       showToast(`Interest charged: ₹${Math.round(totalAmount * 100) / 100} across ${charged} ledger(s)${errorCount ? `, ${errorCount} error(s)` : ''}`, 'success')
       await renderDashboard(container)
