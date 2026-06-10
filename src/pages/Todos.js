@@ -181,14 +181,14 @@ export async function renderTodos(container, navigate) {
       return `
         <div class="card !p-0 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
           <div class="flex items-center justify-between gap-2 px-2.5 py-1 ${headerBg(t.color)} rounded-t-xl">
-            <button class="todo-toggle p-1 rounded-lg ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
-              <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-lg"></ion-icon>
+            <button class="todo-delete p-1 rounded-lg text-gray-300 hover:text-red-400" title="Delete">
+              <ion-icon name="trash-outline" class="text-base"></ion-icon>
             </button>
             <div class="todo-target-date text-[11px] font-medium text-center cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
               ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
             </div>
-            <button class="todo-delete p-1 rounded-lg text-gray-300 hover:text-red-400" title="Delete">
-              <ion-icon name="trash-outline" class="text-base"></ion-icon>
+            <button class="todo-toggle p-1 rounded-lg ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
+              <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-lg"></ion-icon>
             </button>
           </div>
           <div class="px-2.5 py-2">
