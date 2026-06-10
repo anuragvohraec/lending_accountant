@@ -240,16 +240,25 @@ export async function renderTodos(container, navigate) {
       onDoubleTap(el, () => {
         const item = todos.find(t => t._id === el.dataset.id)
         if (!item) return
-        const current = item.targetDate ? fmtDate(item.targetDate) : fmtDate(todayISO())
-        const input = document.createElement('input')
-        input.type = 'text'
-        input.className = 'input text-xs py-0.5 px-1 w-28 text-center'
-        input.value = current
-        input.inputMode = 'numeric'
-        el.innerHTML = ''
-        el.appendChild(input)
-        input.focus()
-        input.select()
+        const currentFmt = item.targetDate ? fmtDate(item.targetDate) : fmtDate(todayISO())
+        const currentIso = item.targetDate || todayISO()
+
+        el.innerHTML = `
+          <div class="flex items-center gap-1">
+            <input type="text" class="input text-xs py-0.5 px-1 w-24 text-center target-date-text" value="${currentFmt}" inputmode="numeric" autocomplete="off">
+            <input type="date" class="target-date-native hidden" value="${currentIso}">
+            <button class="target-date-picker text-gray-500 p-0.5 shrink-0" title="Pick date">
+              <ion-icon name="calendar-outline" class="text-sm"></ion-icon>
+            </button>
+          </div>
+        `
+
+        const textInput = el.querySelector('.target-date-text')
+        const native = el.querySelector('.target-date-native')
+        const pickerBtn = el.querySelector('.target-date-picker')
+
+        textInput.focus()
+        textInput.select()
 
         function parseDate(str) {
           const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})?(\d{2})$/)
@@ -260,17 +269,37 @@ export async function renderTodos(container, navigate) {
           return yy + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0')
         }
 
-        input.addEventListener('blur', async () => {
-          const parsed = parseDate(input.value)
-          item.targetDate = parsed || todayISO()
+        function fmtToDisplay(iso) {
+          if (!iso) return ''
+          const p = iso.slice(0, 10).split('-')
+          return p[2] + '/' + p[1] + '/' + p[0].slice(-2)
+        }
+
+        function commit(val) {
+          const parsed = val || textInput.value
+          const iso = parseDate(parsed)
+          item.targetDate = iso || todayISO()
           item.updatedAt = new Date().toISOString()
-          await saveTodo(item)
+          saveTodo(item)
           sortTodos()
           renderList()
+        }
+
+        textInput.addEventListener('blur', () => commit(null))
+        textInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') textInput.blur()
+          if (e.key === 'Escape') { textInput.value = currentFmt; textInput.blur() }
         })
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') input.blur()
-          if (e.key === 'Escape') { input.value = current; input.blur() }
+
+        native.addEventListener('change', () => {
+          if (native.value) {
+            textInput.value = fmtToDisplay(native.value)
+            commit(native.value)
+          }
+        })
+
+        pickerBtn.addEventListener('click', () => {
+          native.showPicker ? native.showPicker() : native.click()
         })
       })
     })
