@@ -1,6 +1,8 @@
 import { getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDateShort } from '../utils/formatters.js'
-import { getOutstandingForParty } from '../services/interest.js'
+import { getOutstandingForParty, calculateMonthlyCharges, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
+import { saveTransaction } from '../db/database.js'
+import { logAction } from '../services/audit.js'
 import { generateInterestReport, renderReportOverlay } from './InterestReport.js'
 import { generateTaxReport, renderTaxReportOverlay } from './TaxReport.js'
 import { generatePartnerTransferReport, renderPartnerTransferReportOverlay } from './PartnerTransferReport.js'
@@ -35,6 +37,17 @@ export async function renderDashboard(container) {
           <button class="btn-ghost btn-icon text-primary" id="report-btn" title="Generate Report"><ion-icon name="document-text-outline" class="text-lg"></ion-icon></button>
         </div>
         <div id="dash-pending-list"></div>
+      </div>
+      <div id="dash-bulk-interest" class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-sm">Bulk Interest</h3>
+          <ion-icon name="flash-outline" class="text-primary text-lg"></ion-icon>
+        </div>
+        <p class="text-[11px] text-gray-400 mb-3">Charge interest in bulk for multiple parties at once</p>
+        <button class="btn-outline btn-sm w-full" id="bulk-interest-btn">
+          <ion-icon name="flash-outline" class="text-sm mr-1"></ion-icon>
+          Charge Interest
+        </button>
       </div>
       <div id="dash-chart-section" class="card">
         <div class="flex items-center justify-between mb-3">
@@ -213,6 +226,111 @@ export async function renderDashboard(container) {
   }
 
   setupChart(allTxns, parties)
+
+  document.getElementById('bulk-interest-btn')?.addEventListener('click', async () => {
+    const today = new Date().toISOString().split('T')[0]
+
+    const partyCheckboxes = activeParties.map(p => `
+      <label class="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+        <input type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary bulk-party-cb" value="${p._id}" checked />
+        <span class="text-sm">${escHtml(p.name)}</span>
+      </label>
+    `).join('')
+
+    const content = `
+      <div class="space-y-3">
+        <div>
+          <label class="input-label">Charge Date</label>
+          ${dateInputHTML({id: 'bulk-date', value: today, cls: 'flex-1'})}
+        </div>
+        <div>
+          <label class="input-label">Select Parties</label>
+          <div class="max-h-40 overflow-y-auto border border-gray-200 rounded-xl px-3 py-1">${partyCheckboxes}</div>
+        </div>
+      </div>
+    `
+
+    const result = await showModal({
+      title: 'Bulk Interest Charge',
+      content,
+      confirmText: 'Charge',
+      onMounted: () => { setupDateInput('bulk-date') },
+      onConfirm: () => {
+        const toDate = getDateInputValue('bulk-date')
+        if (!toDate) { showToast('Select a date', 'error'); return false }
+        const partyIds = Array.from(document.querySelectorAll('.bulk-party-cb:checked')).map(cb => cb.value)
+        if (partyIds.length === 0) { showToast('Select at least one party', 'error'); return false }
+        return { toDate, partyIds }
+      },
+    })
+
+    if (!result || result === true) return
+    const { toDate, partyIds } = result
+
+    let charged = 0, totalAmount = 0, errorCount = 0
+    showToast('Charging interest...', 'info')
+
+    for (const pid of partyIds) {
+      const party = parties.find(p => p._id === pid)
+      if (!party) continue
+      const partyLedgers = allLedgers.filter(l => l.partyId === pid && l.status !== 'closed' && l.interestRate)
+      if (partyLedgers.length === 0) continue
+
+      for (const ledger of partyLedgers) {
+        const ledgerTxns = allTxns.filter(t => t.partyId === pid && t.ledgerId === ledger._id)
+        if (ledgerTxns.filter(t => !t.category || t.category === 'principal').length === 0) continue
+
+        const lastChargeDate = getLastInterestChargeDate(ledgerTxns)
+        let fromDate
+        if (lastChargeDate) {
+          const d = new Date(lastChargeDate + 'T00:00:00')
+          d.setDate(d.getDate() + 1)
+          fromDate = d.toISOString().split('T')[0]
+        } else {
+          const firstDate = getFirstPrincipalDate(ledgerTxns)
+          if (!firstDate || firstDate >= toDate) continue
+          fromDate = firstDate
+        }
+
+        if (fromDate >= toDate) continue
+
+        const charges = calculateMonthlyCharges({ transactions: ledgerTxns, rate: ledger.interestRate, fromDate, toDate })
+        if (charges.length === 0) continue
+
+        const totalInterest = charges.reduce((s, c) => s + c.amount, 0)
+        if (Math.round(Math.abs(totalInterest) * 100) / 100 < 0.01) continue
+
+        try {
+          const data = {
+            partyId: pid,
+            ledgerId: ledger._id,
+            category: 'interest',
+            type: 'charge',
+            amount: Math.round(totalInterest * 100) / 100,
+            date: toDate,
+            notes: `Bulk interest charged from ${charges[0].fromDate} to ${toDate}`,
+            breakdown: charges,
+            updatedAt: new Date().toISOString(),
+          }
+          const saved = await saveTransaction(data)
+          logAction('charge', 'interest', saved.id, `Bulk interest charged for ${party.name} (${ledger.name}) from ${charges[0].fromDate} to ${toDate}: ₹${Math.round(totalInterest * 100) / 100}`)
+          charged++
+          totalAmount += totalInterest
+        } catch (e) {
+          console.error('Bulk interest charge error:', e)
+          errorCount++
+        }
+      }
+    }
+
+    if (charged === 0) {
+      showToast('No interest to charge for selected parties', 'error')
+    } else {
+      showToast(`Interest charged: ₹${Math.round(totalAmount * 100) / 100} across ${charged} ledger(s)${errorCount ? `, ${errorCount} error(s)` : ''}`, 'success')
+      renderDashboard(container)
+    }
+  })
+
   document.querySelectorAll('.chart-period').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.chart-period').forEach((b) => {
