@@ -4,8 +4,8 @@ import { showConfirm, showPrompt } from '../components/Modal.js'
 import { exportBackup, importBackup } from '../services/export.js'
 import { isLockEnabled, getLockMethod, webauthnAvailable, setupWebAuthn, setPin, clearAuth } from '../services/pin.js'
 import { getSettings, saveSettings, getAuditLogs, getMoneySources, getParties, getAllTransactions, getAllSourceTransactions, getCollaterals, getLedgers, getAllAuditLogs } from '../db/database.js'
-import { formatTime } from '../utils/formatters.js'
-import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
+
+import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
 import { startSync, stopSync, getSyncState, onSyncStatus, clearSyncListeners } from '../services/sync.js'
 
 export async function renderSettings(container, navigate) {
@@ -135,11 +135,10 @@ export async function renderSettings(container, navigate) {
 
       <div class="card">
         <h3 class="font-semibold text-sm mb-3">Audit Log</h3>
-        <div class="flex items-center gap-1.5 mb-2 flex-wrap">
-          ${dateInputHTML({id: 'audit-from', value: ''})}
-          <span class="text-xs text-gray-400">to</span>
-          ${dateInputHTML({id: 'audit-to', value: ''})}
-          <button class="btn-ghost text-xs px-2 py-1" id="audit-filter-btn">Filter</button>
+        <div class="flex items-center gap-1.5 mb-2">
+          <button class="btn-ghost text-xs px-2 py-1" id="audit-prev-day"><ion-icon name="chevron-back-outline"></ion-icon></button>
+          ${dateInputHTML({id: 'audit-date', value: new Date().toISOString().split('T')[0]})}
+          <button class="btn-ghost text-xs px-2 py-1" id="audit-next-day"><ion-icon name="chevron-forward-outline"></ion-icon></button>
         </div>
         <div id="audit-log" class="space-y-1 max-h-48 overflow-y-auto"></div>
       </div>
@@ -174,51 +173,66 @@ export async function renderSettings(container, navigate) {
     if (window.forceSWUpdate) window.forceSWUpdate()
   })
 
-  setupDateInput('audit-from')
-  setupDateInput('audit-to')
+  setupDateInput('audit-date')
 
-  async function renderAuditLogs(fromDate, toDate) {
+  async function renderAuditLogsForDate(dateStr) {
     const auditEl = document.getElementById('audit-log')
-    let logs
-    if (fromDate || toDate) {
-      const all = await getAllAuditLogs()
-      logs = all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      if (fromDate) logs = logs.filter(l => l.timestamp >= fromDate)
-      if (toDate) logs = logs.filter(l => l.timestamp.slice(0, 10) <= toDate)
-      auditEl.classList.remove('max-h-48')
-    } else {
-      logs = await getAuditLogs(20)
-      auditEl.classList.add('max-h-48')
-    }
+    const dayStart = dateStr + 'T00:00:00'
+    const dayEnd = dateStr + 'T23:59:59'
+    const all = await getAllAuditLogs()
+    let logs = all.filter(l => l.timestamp >= dayStart && l.timestamp <= dayEnd)
+    logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    auditEl.classList.remove('max-h-48')
     if (logs.length === 0) {
-      auditEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No audit logs found</p>'
+      auditEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No audit logs for this date</p>'
     } else {
       auditEl.innerHTML = logs.map((log) => {
         const d = new Date(log.timestamp)
         const dd = String(d.getDate()).padStart(2, '0')
         const mm = String(d.getMonth() + 1).padStart(2, '0')
         const yy = String(d.getFullYear()).slice(-2)
-        const dateStr = dd + '/' + mm + '/' + yy
+        const hrs = String(d.getHours()).padStart(2, '0')
+        const mins = String(d.getMinutes()).padStart(2, '0')
+        const dateTimeStr = dd + '/' + mm + '/' + yy + ' ' + hrs + ':' + mins
         return `
         <div class="flex flex-col gap-0.5 py-1.5 text-xs border-b border-gray-50 last:border-0">
           <div class="flex items-center justify-between">
-            <span class="text-gray-400 font-medium">${dateStr}</span>
+            <span class="text-gray-400">${dateTimeStr}</span>
             <span class="capitalize text-gray-500 font-medium">${log.action}</span>
           </div>
-          <div class="text-gray-400">${formatTime(log.timestamp)}</div>
           <div class="text-gray-400 break-words whitespace-pre-wrap">${log.details || log.entityType}</div>
         </div>
       `}).join('')
     }
   }
 
-  document.getElementById('audit-filter-btn').addEventListener('click', () => {
-    const from = getDateInputValue('audit-from')
-    const to = getDateInputValue('audit-to')
-    renderAuditLogs(from || null, to || null)
+  function getCurrentAuditDate() {
+    return getDateInputValue('audit-date') || new Date().toISOString().split('T')[0]
+  }
+
+  function shiftDate(dateStr, days) {
+    const d = new Date(dateStr + 'T00:00:00')
+    d.setDate(d.getDate() + days)
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+  }
+
+  document.getElementById('audit-prev-day').addEventListener('click', () => {
+    const newDate = shiftDate(getCurrentAuditDate(), -1)
+    setDateInputValue('audit-date', newDate)
+    renderAuditLogsForDate(newDate)
   })
 
-  renderAuditLogs()
+  document.getElementById('audit-next-day').addEventListener('click', () => {
+    const newDate = shiftDate(getCurrentAuditDate(), 1)
+    setDateInputValue('audit-date', newDate)
+    renderAuditLogsForDate(newDate)
+  })
+
+  document.getElementById('audit-date').addEventListener('change', () => {
+    renderAuditLogsForDate(getCurrentAuditDate())
+  })
+
+  renderAuditLogsForDate(new Date().toISOString().split('T')[0])
 
   document.getElementById('toggle-lock')?.addEventListener('click', async () => {
     const enabled = await isLockEnabled()
