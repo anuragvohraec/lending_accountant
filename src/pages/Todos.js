@@ -52,13 +52,13 @@ export async function renderTodos(container, navigate) {
 
   container.innerHTML = `
     <div class="px-4 pb-24">
-      <div class="flex items-center gap-2 mb-3">
+      <div class="flex items-center gap-1.5 mb-2">
         <div class="flex-1">
-          <input class="input text-sm w-full" id="todo-search" placeholder="Search notes">
+          <input class="input text-xs !py-1.5 w-full" id="todo-search" placeholder="Search notes">
         </div>
         <div class="relative">
-          <button class="btn-icon text-gray-400 hover:text-primary transition-colors" id="todo-sort-btn" title="Sort">
-            <ion-icon name="funnel-outline" class="text-xl"></ion-icon>
+          <button class="p-1.5 rounded-lg text-gray-400 hover:text-primary transition-colors" id="todo-sort-btn" title="Sort">
+            <ion-icon name="funnel-outline" class="text-lg"></ion-icon>
           </button>
           <div id="todo-sort-popover" class="hidden absolute top-full right-0 mt-1 py-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 min-w-[130px]">
             <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="updated">Last updated</button>
@@ -66,8 +66,8 @@ export async function renderTodos(container, navigate) {
             <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="target">Target date</button>
           </div>
         </div>
-        <button class="btn-icon text-gray-400 hover:text-primary transition-colors" id="todo-show-closed" title="Include closed">
-          <ion-icon name="archive-outline" class="text-xl"></ion-icon>
+        <button class="p-1.5 rounded-lg text-gray-400 hover:text-primary transition-colors" id="todo-show-closed" title="Include closed">
+          <ion-icon name="archive-outline" class="text-lg"></ion-icon>
         </button>
       </div>
       <div id="todo-list" class="space-y-2"></div>
