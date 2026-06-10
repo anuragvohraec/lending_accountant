@@ -322,9 +322,8 @@ export async function renderDashboard(container) {
             updatedAt: new Date().toISOString(),
           }
           const saved = await saveTransaction(data)
-          logAction('charge', 'interest', saved.id, `Bulk interest charged for ${party.name} (${ledger.name}) from ${charges[0].fromDate} to ${toDate}: ₹${Math.round(totalInterest * 100) / 100}`)
           chargedIds.push(saved.id)
-          chargedParties.push({ party: party.name, ledger: ledger.name })
+          chargedParties.push({ party: party.name, ledger: ledger.name, amount: Math.round(totalInterest * 100) / 100 })
           charged++
           totalAmount += totalInterest
         } catch (e) {
@@ -337,6 +336,12 @@ export async function renderDashboard(container) {
     if (charged === 0) {
       showToast('No interest to charge for selected parties', 'error')
     } else {
+      const partySummary = {}
+      chargedParties.forEach(p => {
+        partySummary[p.party] = (partySummary[p.party] || 0) + p.amount
+      })
+      const summaryParts = Object.entries(partySummary).map(([name, amt]) => `${name}: ₹${Math.round(amt * 100) / 100}`)
+      logAction('charge', 'interest', chargedIds.join(','), `Bulk interest charged till ${toDate} — Total: ₹${Math.round(totalAmount * 100) / 100}. ${summaryParts.join('; ')}`)
       lastBulkCharge = { ids: chargedIds, parties: chargedParties, count: charged, total: totalAmount, date: toDate }
       document.getElementById('bulk-interest-btn')?.classList.add('hidden')
       const undoBtn = document.getElementById('bulk-undo-btn')
