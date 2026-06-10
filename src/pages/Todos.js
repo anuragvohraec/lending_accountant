@@ -153,6 +153,8 @@ export async function renderTodos(container, navigate) {
         const item = todos.find(t => t._id === noteEl.closest('.todo-item').dataset.id)
         if (!item) return
         const originalText = item.note || ''
+        let editing = true
+
         noteEl.contentEditable = 'true'
         noteEl.classList.remove('cursor-pointer', 'select-none')
         noteEl.focus()
@@ -164,38 +166,41 @@ export async function renderTodos(container, navigate) {
         noteEl.style.position = 'relative'
         noteEl.appendChild(cancelBtn)
 
-        cancelBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          noteEl.textContent = originalText
-          finishEditing()
-        })
-
-        function finishEditing() {
+        function clearEditUI() {
+          if (!editing) return
+          editing = false
           if (cancelBtn.parentNode) cancelBtn.remove()
           noteEl.style.position = ''
           noteEl.contentEditable = 'false'
           noteEl.classList.add('cursor-pointer', 'select-none')
-          renderList()
+          document.removeEventListener('click', docHandler, true)
         }
 
-        const save = async () => {
-          if (cancelBtn.parentNode) cancelBtn.remove()
-          noteEl.style.position = ''
-          noteEl.contentEditable = 'false'
-          noteEl.classList.add('cursor-pointer', 'select-none')
+        function docHandler(e) {
+          if (noteEl.contains(e.target) || cancelBtn.contains(e.target)) return
           const val = noteEl.textContent.trim()
           if (val && val !== originalText) {
             item.note = val
             item.updatedAt = new Date().toISOString()
-            await saveTodo(item)
+            saveTodo(item)
             logAction('update', 'todo', item._id, `Edited todo: ${val.slice(0, 50)}`)
             showToast('ToDo updated')
           }
-          renderList()
+          clearEditUI()
         }
-        noteEl.addEventListener('blur', save, { once: true })
+        document.addEventListener('click', docHandler, true)
+
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          noteEl.textContent = originalText
+          clearEditUI()
+        })
+
         noteEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') { noteEl.textContent = originalText; noteEl.blur() }
+          if (e.key === 'Escape') {
+            noteEl.textContent = originalText
+            clearEditUI()
+          }
         })
       })
     })
