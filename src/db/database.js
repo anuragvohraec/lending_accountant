@@ -352,6 +352,7 @@ export async function saveTodo(data) {
   const db = getDb()
   if (data._id) {
     const existing = await db.get(data._id)
+    data._rev = existing._rev
     return db.put({ ...existing, ...data })
   }
   data._id = 'todo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
