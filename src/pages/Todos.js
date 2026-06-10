@@ -80,20 +80,22 @@ export async function renderTodos(container, navigate) {
       const created = new Date(t.createdAt)
       const cd = String(created.getDate()).padStart(2, '0') + '/' + String(created.getMonth() + 1).padStart(2, '0') + '/' + String(created.getFullYear()).slice(-2)
       return `
-        <div class="card p-3 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
-          <div class="flex items-center justify-between gap-2 mb-1.5">
-            <button class="btn-icon todo-toggle ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
-              <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-xl"></ion-icon>
+        <div class="card !p-0 todo-item ${t.status === 'closed' ? 'opacity-50' : ''}" data-id="${t._id}">
+          <div class="flex items-center justify-between gap-2 px-2.5 py-1 bg-gray-50/80 rounded-t-xl">
+            <button class="todo-toggle p-1 rounded-lg ${t.status === 'closed' ? 'text-green-500' : 'text-gray-300 hover:text-green-500'}" title="Toggle status">
+              <ion-icon name="${t.status === 'closed' ? 'checkmark-circle' : 'checkmark-circle-outline'}" class="text-lg"></ion-icon>
             </button>
-            <div class="todo-target-date text-xs font-medium text-center cursor-pointer ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
+            <div class="todo-target-date text-[11px] font-medium text-center cursor-pointer leading-tight ${t.targetDate ? 'text-primary' : 'text-gray-400'}" data-id="${t._id}">
               ${t.targetDate ? fmtDate(t.targetDate) : '+ Add date'}
             </div>
-            <button class="btn-icon text-gray-300 hover:text-red-400 todo-delete" title="Delete">
+            <button class="todo-delete p-1 rounded-lg text-gray-300 hover:text-red-400" title="Delete">
               <ion-icon name="trash-outline" class="text-base"></ion-icon>
             </button>
           </div>
-          <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 mb-1 cursor-pointer select-none">${escHtml(t.note || '')}</div>
-          <div class="text-[10px] text-gray-400">${cd}</div>
+          <div class="px-2.5 py-2">
+            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 mb-1.5 cursor-pointer select-none">${escHtml(t.note || '')}</div>
+            <div class="text-[10px] text-gray-400">${cd}</div>
+          </div>
         </div>
       `
     }).join('')
