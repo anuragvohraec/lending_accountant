@@ -93,6 +93,11 @@ export async function renderDashboard(container) {
   ])
   removeLoader()
 
+  if (lastBulkCharge) {
+    const stillExist = lastBulkCharge.ids.every(id => allTxns.some(t => t._id === id))
+    if (!stillExist) lastBulkCharge = null
+  }
+
   const activeParties = parties.filter((p) => p.status === 'active')
   const activeSources = sources.filter((s) => s.status !== 'inactive')
 
@@ -368,6 +373,11 @@ export async function renderDashboard(container) {
     showToast(`Undone: ${deleted} charge(s) deleted${errs ? `, ${errs} error(s)` : ''}`, 'info')
     renderDashboard(container)
   })
+
+  if (lastBulkCharge) {
+    document.getElementById('bulk-undo-btn')?.classList.remove('hidden')
+    document.getElementById('bulk-interest-btn')?.classList.add('hidden')
+  }
 
   document.querySelectorAll('.chart-period').forEach((btn) => {
     btn.addEventListener('click', () => {
