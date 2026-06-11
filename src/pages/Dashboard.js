@@ -14,13 +14,15 @@ import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } f
 import { escHtml } from '../utils/helpers.js'
 let charts = {}
 let lastBulkCharge = null
+let dashNavigate = null
 
 function destroyCharts() {
   Object.values(charts).forEach((c) => { try { c.destroy() } catch {} })
   charts = {}
 }
 
-export async function renderDashboard(container) {
+export async function renderDashboard(container, navigate) {
+  dashNavigate = navigate
   renderHeader('MunimJi', {
     rightAction: '<button class="btn-ghost btn-icon" id="refresh-dash"><ion-icon name="refresh-outline" class="text-xl"></ion-icon></button>'
   })
@@ -196,7 +198,7 @@ export async function renderDashboard(container) {
     `).join('')
     partyListEl.onclick = (e) => {
       const row = e.target.closest('[data-party-id]')
-      if (row) navigate('PartyDetail', { id: row.dataset.partyId })
+      if (row) dashNavigate('PartyDetail', { id: row.dataset.partyId })
     }
     partyOsEl?.classList.remove('hidden')
   }
