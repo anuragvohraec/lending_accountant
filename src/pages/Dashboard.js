@@ -198,7 +198,7 @@ export async function renderDashboard(container, navigate) {
     `).join('')
     partyListEl.onclick = (e) => {
       const row = e.target.closest('[data-party-id]')
-      if (row) dashNavigate('PartyDetail', { id: row.dataset.partyId })
+      if (row) dashNavigate('party-detail', { id: row.dataset.partyId })
     }
     partyOsEl?.classList.remove('hidden')
   }
