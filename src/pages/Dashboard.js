@@ -181,17 +181,23 @@ export async function renderDashboard(container) {
   `).join('')
 
   const partyOutstanding = activeParties.map(p => ({
+    _id: p._id,
     name: p.name,
     amount: Math.round(Math.max(0, getOutstandingForParty(allTxns.filter(t => t.partyId === p._id))) * 100) / 100,
   })).filter(p => p.amount > 0).sort((a, b) => b.amount - a.amount)
   const partyOsEl = document.getElementById('dash-party-outstanding')
   if (partyOutstanding.length > 0) {
-    document.getElementById('dash-party-list').innerHTML = partyOutstanding.map(p => `
-      <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-        <span class="text-sm">${p.name}</span>
+    const partyListEl = document.getElementById('dash-party-list')
+    partyListEl.innerHTML = partyOutstanding.map(p => `
+      <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 cursor-pointer hover:bg-gray-50" data-party-id="${escHtml(p._id)}">
+        <span class="text-sm">${escHtml(p.name)}</span>
         <span class="amount-negative text-sm">${formatCurrencyFull(p.amount)}</span>
       </div>
     `).join('')
+    partyListEl.onclick = (e) => {
+      const row = e.target.closest('[data-party-id]')
+      if (row) navigate('PartyDetail', { id: row.dataset.partyId })
+    }
     partyOsEl?.classList.remove('hidden')
   }
 
