@@ -396,7 +396,7 @@ export async function renderTodos(container, navigate) {
   document.addEventListener('click', (e) => {
     const popover = document.getElementById('todo-sort-popover')
     const btn = document.getElementById('todo-sort-btn')
-    if (!popover.classList.contains('hidden') && !btn.contains(e.target) && !popover.contains(e.target)) {
+    if (popover && btn && !popover.classList.contains('hidden') && !btn.contains(e.target) && !popover.contains(e.target)) {
       popover.classList.add('hidden')
     }
   })
