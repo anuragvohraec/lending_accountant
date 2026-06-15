@@ -29,6 +29,7 @@ export async function renderParties(container, navigate) {
 
   const removeLoader = showSkeleton(container.querySelector('#parties-list'))
   let [parties, allTxns] = await Promise.all([getParties(), getAllTransactions()])
+  parties.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   removeLoader()
 
   window.__partyForm = () => showPartyForm(null, parties, allTxns, container, navigate)
