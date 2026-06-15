@@ -177,6 +177,7 @@ export async function renderSettings(container, navigate) {
 
   async function renderAuditLogsForDate(dateStr) {
     const auditEl = document.getElementById('audit-log')
+    if (!auditEl) return
     const dayStart = dateStr + 'T00:00:00'
     const dayEnd = dateStr + 'T23:59:59'
     const all = await getAllAuditLogs()
@@ -235,10 +236,12 @@ export async function renderSettings(container, navigate) {
   renderAuditLogsForDate(new Date().toISOString().split('T')[0])
 
   async function refreshDataAndAudit() {
+    const dc = document.getElementById('data-count')
+    if (!dc) return
     const [s, p, t, col, st, l, al] = await Promise.all([
       getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(), getLedgers(), getAllAuditLogs(),
     ])
-    document.getElementById('data-count').textContent = (s.length + p.length + t.length + col.length + st.length + l.length + al.length) + ' records'
+    dc.textContent = (s.length + p.length + t.length + col.length + st.length + l.length + al.length) + ' records'
     renderAuditLogsForDate(getCurrentAuditDate())
   }
 

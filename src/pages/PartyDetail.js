@@ -649,7 +649,7 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
       const txnDesc = deletedTxn ? `${deletedTxn.type === 'debit' ? 'Loan given' : 'Repayment'} of ${deletedTxn.amount} on ${deletedTxn.date?.slice(0, 10) || '?'}` : 'principal transaction'
       logAction('delete', 'transaction', btn.dataset.id, `Deleted ${txnDesc} (${party.name})`)
       showToast('Transaction deleted')
-      renderPartyDetail(container, navigate, { id: party._id })
+      renderPartyDetail(container, navigate, { id: party._id, ledgerId })
     })
   })
 }
@@ -774,7 +774,7 @@ function renderInterestTransactions(txns, sources, party, allTxns, container, na
       await deleteTransaction(btn.dataset.id)
       logAction('delete', 'transaction', btn.dataset.id, `Deleted interest payment of ${deletedInt?.amount || '?'} from ${party.name}`)
       showToast('Interest payment deleted')
-      renderPartyDetail(container, navigate, { id: party._id })
+      renderPartyDetail(container, navigate, { id: party._id, ledgerId })
     })
   })
 
@@ -798,7 +798,7 @@ function renderInterestTransactions(txns, sources, party, allTxns, container, na
       }
       logAction('delete', 'transaction', party._id, `Deleted ${toDelete.length} interest charges from ${formatDate(chargeDate)} onwards for ${party.name}`)
       showToast(`Deleted ${toDelete.length} interest charge(s)`)
-      renderPartyDetail(container, navigate, { id: party._id })
+      renderPartyDetail(container, navigate, { id: party._id, ledgerId })
     })
   })
 
