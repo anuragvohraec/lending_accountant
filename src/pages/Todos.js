@@ -306,6 +306,7 @@ export async function renderTodos(container, navigate) {
 
     el.querySelectorAll('.todo-note').forEach(noteEl => {
       onDoubleTap(noteEl, () => {
+        if (noteEl.contentEditable === 'true') return
         const item = todos.find(t => t._id === noteEl.closest('.todo-item').dataset.id)
         if (!item) return
         const originalText = item.note || ''
@@ -315,8 +316,9 @@ export async function renderTodos(container, navigate) {
         noteEl.classList.remove('cursor-pointer', 'select-none')
         noteEl.focus()
 
+        noteEl.querySelectorAll('.todo-note-cancel').forEach(b => b.remove())
         const cancelBtn = document.createElement('button')
-        cancelBtn.className = 'absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-100 text-red-500 hover:bg-red-200 leading-none shadow-sm z-10'
+        cancelBtn.className = 'todo-note-cancel absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-100 text-red-500 hover:bg-red-200 leading-none shadow-sm z-10'
         cancelBtn.innerHTML = '<ion-icon name="close-outline" class="text-sm"></ion-icon>'
         cancelBtn.title = 'Cancel edits'
         noteEl.style.position = 'relative'
