@@ -25,6 +25,7 @@ export async function renderStock(container, navigate) {
   container.innerHTML = `
     <div class="slide-up">
       <div id="stock-summary" class="card-flat mb-3 hidden"></div>
+      <div id="stock-pareto" class="mb-3"></div>
       <div id="stock-list" class="space-y-2"></div>
     </div>
   `
@@ -86,62 +87,83 @@ async function renderStockList() {
   let unrealizedPnL = 0
   const partnerPnL = {}
 
-  el.innerHTML = allStocks.map(s => {
-      const entries = entriesByStock[s._id] || []
-      const activeEntries = entries.filter(e => e.remainingQty > 0)
-      const totalQty = calcTotalQty(activeEntries)
-      const avgPrice = calcAvgBuyPrice(activeEntries)
-      const avgDays = calcAvgDays(activeEntries)
-      const avgValue = calcAggregatedCurrentValue(activeEntries)
+  for (const s of allStocks) {
+    const entries = entriesByStock[s._id] || []
+    const activeEntries = entries.filter(e => e.remainingQty > 0)
+    const totalQty = calcTotalQty(activeEntries)
+    const avgPrice = calcAvgBuyPrice(activeEntries)
+    const avgDays = calcAvgDays(activeEntries)
 
-      if (totalQty > 0) {
-        totalInvested += totalQty * avgPrice
-        totalDays += totalQty * avgDays
-        totalQtyAll += totalQty
+    if (totalQty > 0) {
+      totalInvested += totalQty * avgPrice
+      totalDays += totalQty * avgDays
+      totalQtyAll += totalQty
+    }
+
+    for (const e of entries) {
+      const partner = e.partnerName || 'Unknown'
+      if (!partnerPnL[partner]) partnerPnL[partner] = { realized: 0, unrealized: 0, symbol: s.symbol }
+      if (e.remainingQty > 0) {
+        const days = calcDaysHeld(e.date)
+        const cv = calcCurrentValue(e.price, e.monthlyRate, e.minReturn, days)
+        const upnl = (cv - e.price) * e.remainingQty
+        unrealizedPnL += upnl
+        partnerPnL[partner].unrealized += upnl
+      } else if (e.soldPrice) {
+        const rpnl = (e.soldPrice - e.price) * e.qty
+        realizedPnL += rpnl
+        partnerPnL[partner].realized += rpnl
       }
+    }
+  }
 
-      for (const e of entries) {
-        const partner = e.partnerName || 'Unknown'
-        if (!partnerPnL[partner]) partnerPnL[partner] = { realized: 0, unrealized: 0, symbol: s.symbol }
-        if (e.remainingQty > 0) {
-          const days = calcDaysHeld(e.date)
-          const cv = calcCurrentValue(e.price, e.monthlyRate, e.minReturn, days)
-          const upnl = (cv - e.price) * e.remainingQty
-          unrealizedPnL += upnl
-          partnerPnL[partner].unrealized += upnl
-        } else if (e.soldPrice) {
-          const rpnl = (e.soldPrice - e.price) * e.qty
-          realizedPnL += rpnl
-          partnerPnL[partner].realized += rpnl
-        }
-      }
-
-      return `
-        <div class="card stock-card !p-3" data-id="${s._id}">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="font-bold text-sm">${escHtml(s.symbol)}</span>
-            <div class="flex items-center gap-1.5">
-              ${totalQty > 0 ? `
-                <button class="w-7 h-7 rounded-lg bg-primary text-white text-xs font-bold flex items-center justify-center stock-buy shadow-sm" data-id="${s._id}">B</button>
-                <button class="w-7 h-7 rounded-lg bg-red-500 text-white text-xs font-bold flex items-center justify-center stock-sell shadow-sm" data-id="${s._id}">S</button>
-              ` : `
-                <button class="w-7 h-7 rounded-lg bg-primary text-white text-xs font-bold flex items-center justify-center stock-buy shadow-sm" data-id="${s._id}">B</button>
-              `}
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full ${s.status === 'inactive' ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}">${s.status === 'inactive' ? 'Ina' : 'Act'}</span>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 text-[11px] ${totalQty === 0 ? 'text-gray-400' : ''}">
-            <span><span class="text-gray-400">Q</span> <span class="font-semibold">${totalQty}</span></span>
-            <span class="text-gray-200">|</span>
-            <span><span class="text-gray-400">D</span> <span class="font-semibold">${avgDays > 0 ? Math.round(avgDays) : '-'}</span></span>
-            <span class="text-gray-200">|</span>
-            <span><span class="text-gray-400">P</span> <span class="font-semibold">${avgPrice > 0 ? formatCurrencyFull(avgPrice) : '-'}</span></span>
-            <span class="text-gray-200">|</span>
-            <span><span class="text-gray-400">V</span> <span class="font-semibold">${avgValue > 0 ? formatCurrencyFull(avgValue) : '-'}</span></span>
+  function stockCardHtml(s) {
+    const entries = entriesByStock[s._id] || []
+    const activeEntries = entries.filter(e => e.remainingQty > 0)
+    const totalQty = calcTotalQty(activeEntries)
+    const avgPrice = calcAvgBuyPrice(activeEntries)
+    const avgDays = calcAvgDays(activeEntries)
+    const avgValue = calcAggregatedCurrentValue(activeEntries)
+    return `
+      <div class="card stock-card !p-3" data-id="${s._id}">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-sm">${escHtml(s.symbol)}</span>
+          <div class="flex items-center gap-1.5">
+            ${totalQty > 0 ? `
+              <button class="w-7 h-7 rounded-lg bg-primary text-white text-xs font-bold flex items-center justify-center stock-buy shadow-sm" data-id="${s._id}">B</button>
+              <button class="w-7 h-7 rounded-lg bg-red-500 text-white text-xs font-bold flex items-center justify-center stock-sell shadow-sm" data-id="${s._id}">S</button>
+            ` : `
+              <button class="w-7 h-7 rounded-lg bg-primary text-white text-xs font-bold flex items-center justify-center stock-buy shadow-sm" data-id="${s._id}">B</button>
+            `}
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full ${s.status === 'inactive' ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}">${s.status === 'inactive' ? 'Ina' : 'Act'}</span>
           </div>
         </div>
-      `
-    }).join('')
+        <div class="flex items-center gap-2 text-[11px] ${totalQty === 0 ? 'text-gray-400' : ''}">
+          <span><span class="text-gray-400">Q</span> <span class="font-semibold">${totalQty}</span></span>
+          <span class="text-gray-200">|</span>
+          <span><span class="text-gray-400">D</span> <span class="font-semibold">${avgDays > 0 ? Math.round(avgDays) : '-'}</span></span>
+          <span class="text-gray-200">|</span>
+          <span><span class="text-gray-400">P</span> <span class="font-semibold">${avgPrice > 0 ? formatCurrencyFull(avgPrice) : '-'}</span></span>
+          <span class="text-gray-200">|</span>
+          <span><span class="text-gray-400">V</span> <span class="font-semibold">${avgValue > 0 ? formatCurrencyFull(avgValue) : '-'}</span></span>
+        </div>
+      </div>
+    `
+  }
+
+  const activeStocks = allStocks.filter(s => s.status !== 'inactive')
+  const inactiveStocks = allStocks.filter(s => s.status === 'inactive')
+
+  let listHtml = ''
+  if (activeStocks.length > 0) {
+    listHtml += `<div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 px-0.5">Active — ${activeStocks.length}</div>`
+    listHtml += activeStocks.map(stockCardHtml).join('')
+  }
+  if (inactiveStocks.length > 0) {
+    listHtml += `<div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-3 mb-1.5 px-0.5">Inactive — ${inactiveStocks.length}</div>`
+    listHtml += inactiveStocks.map(stockCardHtml).join('')
+  }
+  el.innerHTML = listHtml
 
     const summaryEl = document.getElementById('stock-summary')
     if (totalQtyAll > 0 || realizedPnL !== 0) {
@@ -201,6 +223,8 @@ async function renderStockList() {
         showSellForm(btn.dataset.id)
       })
     })
+
+  renderParetoAnalysis(entriesByStock)
 }
 
 async function showStockMenu() {
@@ -352,6 +376,7 @@ async function importStockCSV() {
         }
         importedSymbols++
       } else if (section === 'entries') {
+        allStocks = await getAllStockSymbols()
         const parts = line.split(',').map(s => s.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'))
         const symbol = parts[0]?.trim().toUpperCase()
         const stock = allStocks.find(s => s.symbol === symbol)
@@ -370,6 +395,7 @@ async function importStockCSV() {
           soldDate: parts[10]?.trim() || undefined,
         }
         if (!entry.qty || !entry.price || !entry.date) continue
+        if (entry.status === 'sold') entry.remainingQty = 0
         await saveStockEntry(entry)
         importedEntries++
       }
@@ -382,6 +408,142 @@ async function importStockCSV() {
     logAction('create', 'stock_import', '', `Imported ${importedSymbols} symbols, ${importedEntries} entries from CSV`)
   }
   input.click()
+}
+
+async function renderParetoAnalysis(entriesByStock) {
+  const container = document.getElementById('stock-pareto')
+  if (!container) return
+
+  const holdingPareto = []
+  for (const s of allStocks) {
+    const entries = entriesByStock[s._id] || []
+    const active = entries.filter(e => e.remainingQty > 0)
+    const qty = calcTotalQty(active)
+    const avg = calcAvgBuyPrice(active)
+    const inv = qty * avg
+    if (inv > 0) holdingPareto.push({ symbol: s.symbol, value: inv })
+  }
+  holdingPareto.sort((a, b) => b.value - a.value)
+
+  const profitBySymbol = {}
+  for (const s of allStocks) {
+    const entries = entriesByStock[s._id] || []
+    const sold = entries.filter(e => (!e.remainingQty || e.remainingQty <= 0) && e.soldPrice)
+    for (const e of sold) {
+      const p = (e.soldPrice - e.price) * e.qty
+      if (p > 0) profitBySymbol[s.symbol] = (profitBySymbol[s.symbol] || 0) + p
+    }
+  }
+  const soldPareto = Object.entries(profitBySymbol).map(([symbol, value]) => ({ symbol, value }))
+  soldPareto.sort((a, b) => b.value - a.value)
+
+  if (holdingPareto.length === 0 && soldPareto.length === 0) {
+    container.innerHTML = ''
+    return
+  }
+
+  container.innerHTML = `
+    <div class="card-flat">
+      <div class="flex items-center justify-between cursor-pointer select-none" id="pareto-toggle">
+        <div class="flex items-center gap-2">
+          <ion-icon name="stats-chart-outline" class="text-primary text-sm"></ion-icon>
+          <span class="text-sm font-semibold">Pareto Analysis (80/20)</span>
+        </div>
+        <ion-icon name="chevron-down-outline" class="text-gray-400 transition-transform" id="pareto-chevron"></ion-icon>
+      </div>
+      <div id="pareto-body" class="mt-3 space-y-4 hidden">
+        ${holdingPareto.length > 0 ? `
+          <div>
+            <div class="text-xs font-medium text-gray-500 mb-2">Holding — Investment Concentration</div>
+            <div class="h-52" id="pareto-holding-chart"><canvas></canvas></div>
+            <div class="text-xs text-gray-400 mt-1" id="pareto-holding-text"></div>
+          </div>
+        ` : ''}
+        ${soldPareto.length > 0 ? `
+          <div>
+            <div class="text-xs font-medium text-gray-500 mb-2">Sold — Profit Concentration</div>
+            <div class="h-52" id="pareto-sold-chart"><canvas></canvas></div>
+            <div class="text-xs text-gray-400 mt-1" id="pareto-sold-text"></div>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `
+
+  document.getElementById('pareto-toggle').addEventListener('click', () => {
+    const body = document.getElementById('pareto-body')
+    const chevron = document.getElementById('pareto-chevron')
+    const wasHidden = body.classList.contains('hidden')
+    body.classList.toggle('hidden')
+    chevron.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)'
+    if (!wasHidden) return
+    requestAnimationFrame(() => {
+      initParetoChart('pareto-holding-chart', holdingPareto, 'Investment', '#6366f1', (v) => formatCurrencyFull(v),
+        (d) => `Top ${d.count} of ${d.total} stocks (${d.pctOfTotal}%) hold ${d.pct80}% of total investment`)
+      initParetoChart('pareto-sold-chart', soldPareto, 'Profit', '#10b981', (v) => formatCurrencyFull(v),
+        (d) => `Top ${d.count} of ${d.total} stocks (${d.pctOfTotal}%) contributed ${d.pct80}% of total profit`)
+    })
+  })
+}
+
+function initParetoChart(elementId, data, label, color, fmtVal, textFn) {
+  const el = document.getElementById(elementId)
+  if (!el || data.length === 0) return
+  const canvas = el.querySelector('canvas')
+  if (!canvas) return
+
+  const total = data.reduce((s, d) => s + d.value, 0)
+  let cumSum = 0
+  const cumData = data.map(d => { cumSum += d.value; return +((cumSum / total) * 100).toFixed(1) })
+
+  cumSum = 0
+  let count80 = 0
+  for (const d of data) { cumSum += d.value; count80++; if (cumSum / total >= 0.8) break }
+  const pct80 = +((cumSum / total) * 100).toFixed(1)
+  const pctOfTotal = +((count80 / data.length) * 100).toFixed(1)
+
+  const textEl = document.getElementById(elementId.replace('chart', 'text'))
+  if (textEl) textEl.textContent = textFn({ count: count80, total: data.length, pct80, pctOfTotal })
+
+  new window.Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.symbol),
+      datasets: [
+        { label, data: data.map(d => d.value), backgroundColor: color, borderRadius: 3, order: 2 },
+        {
+          label: 'Cumulative %',
+          data: cumData,
+          type: 'line',
+          borderColor: '#ef4444',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#ef4444',
+          tension: 0.3,
+          order: 1,
+          yAxisID: 'y1',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { boxWidth: 12, padding: 6, font: { size: 10 } } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.dataset.label + ': ' + (ctx.dataset.yAxisID === 'y1' ? ctx.parsed.y + '%' : fmtVal(ctx.parsed.y)),
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+        y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, callback: (v) => v >= 100000 ? (v / 100000).toFixed(0) + 'L' : v } },
+        y1: { beginAtZero: true, max: 100, position: 'right', grid: { display: false }, ticks: { font: { size: 9 }, callback: (v) => v + '%' } },
+      },
+    },
+  })
 }
 
 async function showAddStockForm() {
@@ -465,6 +627,13 @@ async function showStockDetail(stockId) {
     const soldTotalProfit = sold.reduce((sum, e) => sum + (e.soldPrice ? (e.soldPrice - e.price) * e.qty : 0), 0)
     const soldAvgBuy = soldTotalQty > 0 ? sold.reduce((sum, e) => sum + e.price * e.qty, 0) / soldTotalQty : 0
     const soldAvgSell = soldTotalQty > 0 && sold.every(e => e.soldPrice) ? sold.reduce((sum, e) => sum + e.soldPrice * e.qty, 0) / soldTotalQty : 0
+
+    const editBtn = `<div class="flex justify-end mb-1">
+  <button class="stock-edit text-primary flex items-center gap-1 text-xs" data-id="${stock._id}">
+    <ion-icon name="create-outline" class="text-sm"></ion-icon>
+    <span>Edit</span>
+  </button>
+</div>`
 
     const partnerTabs = partners.length > 0 ? `
       <div class="flex gap-1 overflow-x-auto pb-1 mb-2">
@@ -585,6 +754,7 @@ async function showStockDetail(stockId) {
     ` : '<p class="text-xs text-gray-400 mt-2">No sold entries</p>'
 
     return `
+      ${editBtn}
       ${partnerTabs}
       ${viewTabs}
       ${tab === 'holding' ? `
@@ -621,6 +791,13 @@ async function showStockDetail(stockId) {
         const body = document.querySelector('.modal-body')
         if (body) body.innerHTML = renderDetailContent(selectedPartner, stockTab)
         bindDetailActions()
+      })
+    })
+    document.querySelectorAll('.stock-edit').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await showEditStockForm(btn.dataset.id)
+        document.getElementById('modal-container').innerHTML = ''
+        showStockDetail(btn.dataset.id)
       })
     })
     document.querySelectorAll('.entry-edit').forEach(btn => {
@@ -702,6 +879,66 @@ async function showStockDetail(stockId) {
       bindDetailActions()
     },
   })
+}
+
+async function showEditStockForm(stockId) {
+  const stock = allStocks.find(s => s._id === stockId)
+  if (!stock) return false
+
+  const content = `
+    <div class="space-y-3">
+      <div>
+        <label class="input-label">Stock Symbol</label>
+        <input class="input uppercase bg-gray-50 text-gray-500" id="esf-symbol" value="${escHtml(stock.symbol)}" readonly disabled />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="input-label">Monthly Return <span class="text-[10px] text-gray-400">(R)</span> *</label>
+          <input class="input" id="esf-r" type="number" step="0.1" value="${stock.monthlyRate}" />
+        </div>
+        <div>
+          <label class="input-label">Min Return <span class="text-[10px] text-gray-400">(M)</span> *</label>
+          <input class="input" id="esf-m" type="number" step="0.1" value="${stock.minReturn}" />
+        </div>
+      </div>
+      <div>
+        <label class="input-label">Status</label>
+        <select class="input" id="esf-status">
+          <option value="active" ${stock.status === 'active' ? 'selected' : ''}>Active</option>
+          <option value="inactive" ${stock.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+        </select>
+      </div>
+    </div>
+  `
+
+  const result = await showModal({
+    title: `Edit ${escHtml(stock.symbol)}`,
+    content,
+    confirmText: 'Update',
+    onConfirm: () => {
+      const r = parseFloat(document.getElementById('esf-r')?.value)
+      const m = parseFloat(document.getElementById('esf-m')?.value)
+      const status = document.getElementById('esf-status')?.value || 'active'
+      if (!r || r <= 0) { showToast('Monthly return is required', 'error'); return false }
+      if (!m || m <= 0) { showToast('Min return is required', 'error'); return false }
+      return { monthlyRate: r, minReturn: m, status }
+    },
+  })
+
+  if (!result || result === true) return false
+
+  stock.monthlyRate = result.monthlyRate
+  stock.minReturn = result.minReturn
+  stock.status = result.status
+  stock.updatedAt = new Date().toISOString()
+  await saveStockSymbol(stock)
+  logAction('update', 'stock', stock._id, `Updated stock: ${stock.symbol} (R:${result.monthlyRate}, M:${result.minReturn}, status:${result.status})`)
+  showToast('Stock updated')
+
+  allStocks = await getAllStockSymbols()
+  allStocks.sort((a, b) => (a.symbol || '').localeCompare(b.symbol || ''))
+  renderStockList()
+  return true
 }
 
 async function showSellEntryEditForm(stockId, editEntry) {
