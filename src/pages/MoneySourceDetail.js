@@ -199,27 +199,29 @@ function renderLedger() {
   }).filter(Boolean).map((p) => p.id))].map((id) => _allParties.find((p) => p._id === id)).filter(Boolean)
 
   const filterEl = document.getElementById('ledger-filters')
-  filterEl.classList.toggle('hidden', _dateMode)
-  filterEl.innerHTML = `
-    <div class="flex items-center gap-1.5 flex-wrap w-full">
-      ${dateInputHTML({id: 'filter-date-from', value: _filterDateFrom, cls: 'w-[130px]'})}
-      <span class="text-xs text-gray-400">to</span>
-      ${dateInputHTML({id: 'filter-date-to', value: _filterDateTo, cls: 'w-[130px]'})}
-      <select class="input text-xs py-1 px-2 w-auto" id="filter-party">
-        <option value="">All Parties</option>
-        ${partiesInLedger.map((p) => `<option value="${p._id}" ${_filterParty === p._id ? 'selected' : ''}>${p.name}</option>`).join('')}
-      </select>
-      ${(_filterDateFrom || _filterDateTo || _filterParty) ? '<button class="text-xs text-primary ml-1" id="clear-filters">Clear</button>' : ''}
-    </div>
-  `
-
-  setupDateInput('filter-date-from')
-  setupDateInput('filter-date-to')
-
-  document.getElementById('filter-date-from')?.addEventListener('change', () => { _filterDateFrom = getDateInputValue('filter-date-from'); _page = 1; renderLedger() })
-  document.getElementById('filter-date-to')?.addEventListener('change', () => { _filterDateTo = getDateInputValue('filter-date-to'); _page = 1; renderLedger() })
-  document.getElementById('filter-party')?.addEventListener('change', (e) => { _filterParty = e.target.value; _page = 1; renderLedger() })
-  document.getElementById('clear-filters')?.addEventListener('click', () => { _filterDateFrom = ''; _filterDateTo = ''; _filterParty = ''; _page = 1; renderLedger() })
+  if (!_dateMode) {
+    filterEl.innerHTML = `
+      <div class="flex items-center gap-1.5 flex-wrap w-full">
+        ${dateInputHTML({id: 'filter-date-from', value: _filterDateFrom, cls: 'w-[130px]'})}
+        <span class="text-xs text-gray-400">to</span>
+        ${dateInputHTML({id: 'filter-date-to', value: _filterDateTo, cls: 'w-[130px]'})}
+        <select class="input text-xs py-1 px-2 w-auto" id="filter-party">
+          <option value="">All Parties</option>
+          ${partiesInLedger.map((p) => `<option value="${p._id}" ${_filterParty === p._id ? 'selected' : ''}>${p.name}</option>`).join('')}
+        </select>
+        ${(_filterDateFrom || _filterDateTo || _filterParty) ? '<button class="text-xs text-primary ml-1" id="clear-filters">Clear</button>' : ''}
+      </div>
+    `
+    setupDateInput('filter-date-from')
+    setupDateInput('filter-date-to')
+    document.getElementById('filter-date-from')?.addEventListener('change', () => { _filterDateFrom = getDateInputValue('filter-date-from'); _page = 1; renderLedger() })
+    document.getElementById('filter-date-to')?.addEventListener('change', () => { _filterDateTo = getDateInputValue('filter-date-to'); _page = 1; renderLedger() })
+    document.getElementById('filter-party')?.addEventListener('change', (e) => { _filterParty = e.target.value; _page = 1; renderLedger() })
+    document.getElementById('clear-filters')?.addEventListener('click', () => { _filterDateFrom = ''; _filterDateTo = ''; _filterParty = ''; _page = 1; renderLedger() })
+  } else {
+    filterEl.classList.add('hidden')
+    filterEl.innerHTML = ''
+  }
 
   const controlsEl = document.getElementById('ledger-controls')
   if (_dateMode) {
