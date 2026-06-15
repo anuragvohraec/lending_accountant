@@ -192,7 +192,7 @@ export async function renderTodos(container, navigate) {
             </button>
           </div>
           <div class="px-2.5 py-2">
-            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none min-h-[3rem]">${escHtml(t.note || '')}</div>
+            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none" style="min-height:3em">${escHtml(t.note || '')}</div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-[10px] text-gray-400">${cd}</span>
               <div class="relative">
@@ -306,54 +306,57 @@ export async function renderTodos(container, navigate) {
 
     el.querySelectorAll('.todo-note').forEach(noteEl => {
       onDoubleTap(noteEl, () => {
+        if (noteEl.contentEditable === 'true') return
         const item = todos.find(t => t._id === noteEl.closest('.todo-item').dataset.id)
-        if (!item || noteEl.querySelector('textarea')) return
+        if (!item) return
         const originalText = item.note || ''
         let editing = true
 
+        noteEl.contentEditable = 'true'
         noteEl.classList.remove('cursor-pointer', 'select-none')
-        noteEl.innerHTML = `
-          <textarea class="w-full text-sm border border-gray-200 rounded-lg p-2 resize-none focus:outline-none focus:border-primary min-h-[80px]" rows="3">${escHtml(originalText)}</textarea>
-          <div class="flex justify-end gap-1 mt-1">
-            <button class="todo-note-save text-xs px-2.5 py-1 rounded-lg bg-primary text-white font-medium">Save</button>
-            <button class="todo-note-cancel text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 font-medium">Cancel</button>
-          </div>
-        `
-        const textarea = noteEl.querySelector('textarea')
-        textarea.focus()
-        textarea.selectionStart = textarea.value.length
+        noteEl.focus()
+
+        const cancelBtn = document.createElement('button')
+        cancelBtn.className = 'absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-100 text-red-500 hover:bg-red-200 leading-none shadow-sm z-10'
+        cancelBtn.innerHTML = '<ion-icon name="close-outline" class="text-sm"></ion-icon>'
+        cancelBtn.title = 'Cancel edits'
+        noteEl.style.position = 'relative'
+        noteEl.appendChild(cancelBtn)
 
         function clearEditUI() {
           if (!editing) return
           editing = false
-          noteEl.innerHTML = escHtml(item.note || '')
+          if (cancelBtn.parentNode) cancelBtn.remove()
+          noteEl.style.position = ''
+          noteEl.contentEditable = 'false'
           noteEl.classList.add('cursor-pointer', 'select-none')
+          document.removeEventListener('click', docHandler, true)
         }
 
-        function commit() {
-          const val = textarea.value.trim()
-          if (val !== (item.note || '')) {
-            item.note = val || ''
+        function docHandler(e) {
+          if (noteEl.contains(e.target) || cancelBtn.contains(e.target)) return
+          const val = noteEl.textContent.trim()
+          if (val && val !== originalText) {
+            item.note = val
             item.updatedAt = new Date().toISOString()
             saveTodo(item)
-            if (val) logAction('update', 'todo', item._id, `Edited todo: ${val.slice(0, 50)}`)
+            logAction('update', 'todo', item._id, `Edited todo: ${val.slice(0, 50)}`)
             showToast('ToDo updated')
           }
           clearEditUI()
         }
+        document.addEventListener('click', docHandler, true)
 
-        noteEl.querySelector('.todo-note-save').addEventListener('click', commit)
-        noteEl.querySelector('.todo-note-cancel').addEventListener('click', () => {
-          noteEl.innerHTML = escHtml(item.note || '')
-          noteEl.classList.add('cursor-pointer', 'select-none')
-          editing = false
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          noteEl.textContent = originalText
+          clearEditUI()
         })
 
-        textarea.addEventListener('keydown', (e) => {
+        noteEl.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
-            noteEl.innerHTML = escHtml(item.note || '')
-            noteEl.classList.add('cursor-pointer', 'select-none')
-            editing = false
+            noteEl.textContent = originalText
+            clearEditUI()
           }
         })
       })
@@ -406,10 +409,10 @@ export async function renderTodos(container, navigate) {
   document.body.appendChild(fab)
 
   document.getElementById('todo-fab').addEventListener('click', async () => {
-    await saveTodo({ note: '', targetDate: todayISO(), status: 'open', color: '' })
+    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open', color: '' })
     todos = await getAllTodos()
     sortTodos()
-    logAction('create', 'todo', '', 'Created todo')
+    logAction('create', 'todo', '', 'Created todo: New todo')
     showToast('ToDo added — double-tap note to edit')
     renderList()
   })
