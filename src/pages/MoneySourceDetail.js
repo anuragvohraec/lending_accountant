@@ -16,6 +16,8 @@ export async function renderMoneySourceDetail(container, navigate, params) {
   _filterDateFrom = ''
   _filterDateTo = ''
   _filterParty = ''
+  _dateMode = false
+  _dateCursor = ''
 
   const removeLoader = showSkeleton(container)
   const [source, allTxns, sourceTxns, allParties] = await Promise.all([
@@ -72,6 +74,7 @@ export async function renderMoneySourceDetail(container, navigate, params) {
         <div class="flex gap-2">
           <button class="btn-outline btn-sm" id="transfer-btn"><ion-icon name="swap-horizontal-outline" class="text-sm"></ion-icon></button>
           <button class="btn-outline btn-sm" id="filter-ledger"><ion-icon name="funnel-outline" class="text-sm"></ion-icon></button>
+          <button class="btn-outline btn-sm" id="date-mode-btn"><ion-icon name="calendar-outline" class="text-sm"></ion-icon></button>
           <button class="btn-outline btn-sm" id="report-ledger"><ion-icon name="download-outline" class="text-sm"></ion-icon></button>
         </div>
       </div>
@@ -97,6 +100,15 @@ export async function renderMoneySourceDetail(container, navigate, params) {
     if (!document.getElementById('ledger-filters').classList.contains('hidden')) {
       renderLedger()
     }
+  })
+  document.getElementById('date-mode-btn').addEventListener('click', () => {
+    _dateMode = !_dateMode
+    document.getElementById('date-mode-btn').classList.toggle('text-primary', _dateMode)
+    if (_dateMode) {
+      _dateCursor = new Date().toISOString().split('T')[0]
+      document.getElementById('ledger-filters').classList.add('hidden')
+    }
+    renderLedger()
   })
   document.getElementById('balance-stat').addEventListener('click', showPreciseBalance)
 
@@ -149,6 +161,8 @@ let _perPage = 10
 let _filterDateFrom = ''
 let _filterDateTo = ''
 let _filterParty = ''
+let _dateMode = false
+let _dateCursor = ''
 
 function renderLedger() {
   const { balance } = getDerived()
@@ -156,8 +170,12 @@ function renderLedger() {
   const opening = _source.openingBalance || 0
 
   let filtered = [...entries]
-  if (_filterDateFrom) filtered = filtered.filter((e) => e.date >= _filterDateFrom)
-  if (_filterDateTo) filtered = filtered.filter((e) => e.date <= _filterDateTo)
+  if (_dateMode) {
+    if (_dateCursor) filtered = filtered.filter((e) => e.date === _dateCursor)
+  } else {
+    if (_filterDateFrom) filtered = filtered.filter((e) => e.date >= _filterDateFrom)
+    if (_filterDateTo) filtered = filtered.filter((e) => e.date <= _filterDateTo)
+  }
   if (_filterParty) {
     filtered = filtered.filter((e) => {
       if (e.entryType === 'source') return e.partyId === _filterParty
@@ -168,8 +186,8 @@ function renderLedger() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / _perPage))
   if (_page > totalPages) _page = totalPages
-  const start = (_page - 1) * _perPage
-  const pageEntries = filtered.slice(start, start + _perPage)
+  const start = _dateMode ? 0 : (_page - 1) * _perPage
+  const pageEntries = _dateMode ? filtered : filtered.slice(start, start + _perPage)
 
   const partiesInLedger = [...new Set(entries.filter((e) => {
     if (e.entryType === 'principal') return true
@@ -181,6 +199,7 @@ function renderLedger() {
   }).filter(Boolean).map((p) => p.id))].map((id) => _allParties.find((p) => p._id === id)).filter(Boolean)
 
   const filterEl = document.getElementById('ledger-filters')
+  filterEl.classList.toggle('hidden', _dateMode)
   filterEl.innerHTML = `
     <div class="flex items-center gap-1.5 flex-wrap w-full">
       ${dateInputHTML({id: 'filter-date-from', value: _filterDateFrom, cls: 'w-[130px]'})}
@@ -203,24 +222,50 @@ function renderLedger() {
   document.getElementById('clear-filters')?.addEventListener('click', () => { _filterDateFrom = ''; _filterDateTo = ''; _filterParty = ''; _page = 1; renderLedger() })
 
   const controlsEl = document.getElementById('ledger-controls')
-  controlsEl.innerHTML = `
-    <div class="flex items-center gap-2">
-      <select class="input text-xs py-1 px-2 w-auto" id="per-page">
-        ${[10, 25, 50, 100].map((n) => `<option value="${n}" ${_perPage === n ? 'selected' : ''}>${n}</option>`).join('')}
-      </select>
-      <span class="text-xs text-gray-400">per page</span>
-    </div>
-    <div class="flex items-center gap-2">
-      <button class="text-xs px-2 py-1 rounded border border-gray-200 ${_page <= 1 ? 'opacity-30' : ''}" id="page-prev" ${_page <= 1 ? 'disabled' : ''}>Prev</button>
-      <span class="text-xs text-gray-500">${_page}/${totalPages}</span>
-      <button class="text-xs px-2 py-1 rounded border border-gray-200 ${_page >= totalPages ? 'opacity-30' : ''}" id="page-next" ${_page >= totalPages ? 'disabled' : ''}>Next</button>
-      <span class="text-xs text-gray-400 ml-1">(${filtered.length} entries)</span>
-    </div>
-  `
-
-  document.getElementById('per-page')?.addEventListener('change', (e) => { _perPage = parseInt(e.target.value); _page = 1; renderLedger() })
-  document.getElementById('page-prev')?.addEventListener('click', () => { if (_page > 1) { _page--; renderLedger() } })
-  document.getElementById('page-next')?.addEventListener('click', () => { if (_page < totalPages) { _page++; renderLedger() } })
+  if (_dateMode) {
+    controlsEl.innerHTML = `
+      <div class="flex items-center gap-2 w-full">
+        <button class="text-xs px-2 py-1 rounded border border-gray-200" id="date-prev">‹ Prev</button>
+        ${dateInputHTML({id: 'ledger-date-cursor', value: _dateCursor, cls: 'flex-1'})}
+        <button class="text-xs px-2 py-1 rounded border border-gray-200" id="date-next">Next ›</button>
+      </div>
+    `
+    setupDateInput('ledger-date-cursor')
+    document.getElementById('date-prev')?.addEventListener('click', () => {
+      const d = new Date(_dateCursor + 'T12:00:00')
+      d.setDate(d.getDate() - 1)
+      _dateCursor = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      renderLedger()
+    })
+    document.getElementById('date-next')?.addEventListener('click', () => {
+      const d = new Date(_dateCursor + 'T12:00:00')
+      d.setDate(d.getDate() + 1)
+      _dateCursor = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      renderLedger()
+    })
+    document.getElementById('ledger-date-cursor')?.addEventListener('change', () => {
+      _dateCursor = getDateInputValue('ledger-date-cursor')
+      renderLedger()
+    })
+  } else {
+    controlsEl.innerHTML = `
+      <div class="flex items-center gap-2">
+        <select class="input text-xs py-1 px-2 w-auto" id="per-page">
+          ${[10, 25, 50, 100].map((n) => `<option value="${n}" ${_perPage === n ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>
+        <span class="text-xs text-gray-400">per page</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="text-xs px-2 py-1 rounded border border-gray-200 ${_page <= 1 ? 'opacity-30' : ''}" id="page-prev" ${_page <= 1 ? 'disabled' : ''}>Prev</button>
+        <span class="text-xs text-gray-500">${_page}/${totalPages}</span>
+        <button class="text-xs px-2 py-1 rounded border border-gray-200 ${_page >= totalPages ? 'opacity-30' : ''}" id="page-next" ${_page >= totalPages ? 'disabled' : ''}>Next</button>
+        <span class="text-xs text-gray-400 ml-1">(${filtered.length} entries)</span>
+      </div>
+    `
+    document.getElementById('per-page')?.addEventListener('change', (e) => { _perPage = parseInt(e.target.value); _page = 1; renderLedger() })
+    document.getElementById('page-prev')?.addEventListener('click', () => { if (_page > 1) { _page--; renderLedger() } })
+    document.getElementById('page-next')?.addEventListener('click', () => { if (_page < totalPages) { _page++; renderLedger() } })
+  }
 
   const el = document.getElementById('source-ledger')
 
