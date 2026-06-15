@@ -9,6 +9,8 @@ import { logAction } from '../services/audit.js'
 import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 import { escHtml } from '../utils/helpers.js'
 
+let ledgerFilter = ['open']
+
 export async function renderPartyDetail(container, navigate, params) {
   const removeLoader = showSkeleton(container)
   const [party, sources, allTxns, collaterals, ledgers] = await Promise.all([
@@ -44,7 +46,6 @@ export async function renderPartyDetail(container, navigate, params) {
   let selectedLedger = params.ledgerId
     ? ledgers.find((l) => l._id === params.ledgerId) || ledgers[0]
     : ledgers[0]
-  let ledgerFilter = ['open']
   const activeSources = sources.filter((s) => s.status !== 'inactive')
 
   function getLedgerTxns(ledgerId) {
