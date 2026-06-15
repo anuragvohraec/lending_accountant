@@ -1,4 +1,4 @@
-import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry } from '../db/database.js'
+import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry, getAllStockEntries } from '../db/database.js'
 import { getSettings, saveSettings } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate } from '../utils/formatters.js'
 import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
@@ -216,6 +216,14 @@ async function showStockMenu() {
           <input type="radio" name="stock-action" value="add" class="text-primary focus:ring-primary" />
           <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="person-add-outline" class="text-primary text-lg"></ion-icon> Add Partner</span>
         </label>
+        <label class="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 cursor-pointer">
+          <input type="radio" name="stock-action" value="export" class="text-primary focus:ring-primary" />
+          <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="download-outline" class="text-primary text-lg"></ion-icon> Export CSV</span>
+        </label>
+        <label class="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 cursor-pointer">
+          <input type="radio" name="stock-action" value="import" class="text-primary focus:ring-primary" />
+          <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="cloud-upload-outline" class="text-primary text-lg"></ion-icon> Import CSV</span>
+        </label>
       </div>
     `,
     confirmText: 'Go',
@@ -227,6 +235,8 @@ async function showStockMenu() {
 
   if (choice === 'manage') await showPartnerManager()
   else if (choice === 'add') await addPartner()
+  else if (choice === 'export') await exportStockCSV()
+  else if (choice === 'import') await importStockCSV()
 }
 
 async function showPartnerManager() {
@@ -268,6 +278,110 @@ async function addPartner() {
   const settings = await getSettings()
   await saveSettings({ ...settings, stockPartners: [...selectedPartners] })
   renderStockList()
+}
+
+function escCsv(val) {
+  if (val == null) return ''
+  const s = String(val)
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"'
+  }
+  return s
+}
+
+async function exportStockCSV() {
+  const entries = await getAllStockEntries()
+  const symbolMap = {}
+  for (const s of allStocks) symbolMap[s._id] = s.symbol
+
+  const symRows = allStocks.map(s =>
+    [escCsv(s.symbol), escCsv(s.monthlyRate), escCsv(s.minReturn), escCsv(s.status || 'active')].join(',')
+  ).join('\n')
+
+  const entRows = entries.map(e =>
+    [escCsv(symbolMap[e.stockId] || ''), escCsv(e.partnerName), escCsv(e.qty), escCsv(e.price), escCsv(e.date), escCsv(e.monthlyRate), escCsv(e.minReturn), escCsv(e.remainingQty), escCsv(e.status || 'holding'), escCsv(e.soldPrice), escCsv(e.soldDate)].join(',')
+  ).join('\n')
+
+  const csv = `=== Stock Symbols ===\nSymbol,MonthlyReturn,MinReturn,Status\n${symRows}\n\n=== Stock Entries ===\nSymbol,Partner,Qty,Price,Date,MonthlyReturn,MinReturn,RemainingQty,Status,SoldPrice,SoldDate\n${entRows}`
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'stock_data.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+  showToast('Stock data exported')
+}
+
+async function importStockCSV() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.csv'
+  input.onchange = async () => {
+    const file = input.files[0]
+    if (!file) return
+    const text = await file.text()
+    const lines = text.split('\n').map(l => l.trim())
+    let section = ''
+    let importedSymbols = 0
+    let importedEntries = 0
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!line) continue
+      if (line.startsWith('=== Stock Symbols')) { section = 'symbols'; continue }
+      if (line.startsWith('=== Stock Entries')) { section = 'entries'; continue }
+      if (line.startsWith('Symbol,')) continue
+
+      if (section === 'symbols') {
+        const parts = line.split(',').map(s => s.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'))
+        const symbol = parts[0]?.trim().toUpperCase()
+        if (!symbol) continue
+        const monthlyRate = parseFloat(parts[1]) || 2
+        const minReturn = parseFloat(parts[2]) || 10
+        const status = parts[3]?.trim() || 'active'
+        const existing = allStocks.find(s => s.symbol === symbol)
+        if (existing) {
+          existing.monthlyRate = monthlyRate
+          existing.minReturn = minReturn
+          existing.status = status
+          await saveStockSymbol(existing)
+        } else {
+          await saveStockSymbol({ symbol, monthlyRate, minReturn, status })
+        }
+        importedSymbols++
+      } else if (section === 'entries') {
+        const parts = line.split(',').map(s => s.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'))
+        const symbol = parts[0]?.trim().toUpperCase()
+        const stock = allStocks.find(s => s.symbol === symbol)
+        if (!stock) continue
+        const entry = {
+          stockId: stock._id,
+          partnerName: parts[1]?.trim() || '',
+          qty: parseInt(parts[2]) || 0,
+          price: parseFloat(parts[3]) || 0,
+          date: parts[4]?.trim() || '',
+          monthlyRate: parseFloat(parts[5]) || stock.monthlyRate,
+          minReturn: parseFloat(parts[6]) || stock.minReturn,
+          remainingQty: parseInt(parts[7]) ?? parseInt(parts[2]),
+          status: parts[8]?.trim() || 'holding',
+          soldPrice: parts[9] ? parseFloat(parts[9]) : undefined,
+          soldDate: parts[10]?.trim() || undefined,
+        }
+        if (!entry.qty || !entry.price || !entry.date) continue
+        await saveStockEntry(entry)
+        importedEntries++
+      }
+    }
+
+    allStocks = await getAllStockSymbols()
+    allStocks.sort((a, b) => (a.symbol || '').localeCompare(b.symbol || ''))
+    renderStockList()
+    showToast(`Imported ${importedSymbols} symbols, ${importedEntries} entries`)
+    logAction('create', 'stock_import', '', `Imported ${importedSymbols} symbols, ${importedEntries} entries from CSV`)
+  }
+  input.click()
 }
 
 async function showAddStockForm() {

@@ -409,6 +409,10 @@ export async function getStockEntries(stockId) {
   return all.filter(e => e.stockId === stockId).sort((a, b) => new Date(b.date) - new Date(a.date))
 }
 
+export async function getAllStockEntries() {
+  return allDocs('stkentry_')
+}
+
 export async function getActiveStockEntries(stockId) {
   const all = await getStockEntries(stockId)
   return all.filter(e => e.remainingQty > 0)
