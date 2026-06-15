@@ -192,7 +192,7 @@ export async function renderTodos(container, navigate) {
             </button>
           </div>
           <div class="px-2.5 py-2">
-            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none">${escHtml(t.note || '')}</div>
+            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none min-h-[52px]">${escHtml(t.note || '')}</div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-[10px] text-gray-400">${cd}</span>
               <div class="relative">
@@ -335,12 +335,20 @@ export async function renderTodos(container, navigate) {
         function docHandler(e) {
           if (noteEl.contains(e.target) || cancelBtn.contains(e.target)) return
           const val = noteEl.textContent.trim()
-          if (val && val !== originalText) {
-            item.note = val
-            item.updatedAt = new Date().toISOString()
-            saveTodo(item)
-            logAction('update', 'todo', item._id, `Edited todo: ${val.slice(0, 50)}`)
-            showToast('ToDo updated')
+          if (val !== originalText) {
+            if (!val) {
+              if (!originalText) { clearEditUI(); return }
+              deleteTodo(item._id)
+              logAction('delete', 'todo', item._id, `Deleted empty todo`)
+              todos = todos.filter(t => t._id !== item._id)
+              showToast('ToDo deleted (empty note)')
+            } else {
+              item.note = val
+              item.updatedAt = new Date().toISOString()
+              saveTodo(item)
+              logAction('update', 'todo', item._id, `Edited todo: ${val.slice(0, 50)}`)
+              showToast('ToDo updated')
+            }
           }
           clearEditUI()
         }
@@ -408,10 +416,10 @@ export async function renderTodos(container, navigate) {
   document.body.appendChild(fab)
 
   document.getElementById('todo-fab').addEventListener('click', async () => {
-    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open', color: '' })
+    await saveTodo({ note: '', targetDate: todayISO(), status: 'open', color: '' })
     todos = await getAllTodos()
     sortTodos()
-    logAction('create', 'todo', '', 'Created todo: New todo')
+    logAction('create', 'todo', '', 'Created todo')
     showToast('ToDo added — double-tap note to edit')
     renderList()
   })
