@@ -425,6 +425,10 @@ export async function renderDashboard(container, navigate) {
       <div class="space-y-3">
         <div>
           <label class="input-label">Select Parties</label>
+          <div class="flex gap-3 mb-1.5">
+            <button class="text-xs text-primary font-medium" id="tax-select-all">Select All</button>
+            <button class="text-xs text-gray-400 font-medium" id="tax-deselect-all">Deselect All</button>
+          </div>
           <div class="max-h-40 overflow-y-auto border border-gray-200 rounded-xl px-3 py-1">${partyCheckboxes}</div>
         </div>
         <div>
@@ -456,6 +460,12 @@ export async function renderDashboard(container, navigate) {
             setDateInputValue('tax-from', btn.dataset.from)
             setDateInputValue('tax-to', btn.dataset.to)
           })
+        })
+        document.getElementById('tax-select-all')?.addEventListener('click', () => {
+          document.querySelectorAll('.tax-party-cb').forEach(cb => cb.checked = true)
+        })
+        document.getElementById('tax-deselect-all')?.addEventListener('click', () => {
+          document.querySelectorAll('.tax-party-cb').forEach(cb => cb.checked = false)
         })
       },
       onConfirm: () => {
