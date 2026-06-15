@@ -192,7 +192,7 @@ export async function renderTodos(container, navigate) {
             </button>
           </div>
           <div class="px-2.5 py-2">
-            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none" style="min-height:3em">${escHtml(t.note || '')}</div>
+            <div class="todo-note text-sm whitespace-pre-wrap break-words text-gray-700 cursor-pointer select-none">${escHtml(t.note || '')}</div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-[10px] text-gray-400">${cd}</span>
               <div class="relative">
@@ -409,10 +409,10 @@ export async function renderTodos(container, navigate) {
   document.body.appendChild(fab)
 
   document.getElementById('todo-fab').addEventListener('click', async () => {
-    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open', color: '' })
+    await saveTodo({ note: ' ', targetDate: todayISO(), status: 'open', color: '' })
     todos = await getAllTodos()
     sortTodos()
-    logAction('create', 'todo', '', 'Created todo: New todo')
+    logAction('create', 'todo', '', 'Created a new todo')
     showToast('ToDo added — double-tap note to edit')
     renderList()
   })
