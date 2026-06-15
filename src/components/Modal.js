@@ -23,7 +23,7 @@ export function showModal({ title, content, onConfirm, onMounted, confirmText = 
   modal.querySelectorAll('[data-dismiss]').forEach((el) => el.addEventListener('click', dismiss))
 
   return new Promise((resolve) => {
-    document.getElementById('modal-confirm').addEventListener('click', (e) => {
+    modal.querySelector('#modal-confirm').addEventListener('click', (e) => {
       if (typeof onConfirm === 'function') {
         let result
         try { result = onConfirm() } catch (err) { alert('Error: ' + err.message); return }
@@ -37,7 +37,7 @@ export function showModal({ title, content, onConfirm, onMounted, confirmText = 
     })
     modal.querySelector('.modal-body')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
-        const btn = document.getElementById('modal-confirm')
+        const btn = modal.querySelector('#modal-confirm')
         if (btn) btn.click()
       }
     })

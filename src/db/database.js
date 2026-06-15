@@ -317,19 +317,21 @@ export async function saveSettings(settings) {
 }
 
 export async function getAllData() {
-  const [sources, parties, txns, collaterals, auditLogs] = await Promise.all([
+  const [sources, parties, txns, collaterals, auditLogs, stockSymbols, stockEntries] = await Promise.all([
     getMoneySources(),
     getParties(),
     getAllTransactions(),
     getCollateralsWithAttachments(),
     getAuditLogs(9999),
+    getAllStockSymbols(),
+    allDocs('stkentry_'),
   ])
-  return { sources, parties, transactions: txns, collaterals, auditLogs, exportedAt: new Date().toISOString() }
+  return { sources, parties, transactions: txns, collaterals, auditLogs, stockSymbols, stockEntries, exportedAt: new Date().toISOString() }
 }
 
 export async function importAllData(data) {
   const db = getDb()
-  for (const key of ['sources', 'parties', 'transactions', 'collaterals', 'auditLogs']) {
+  for (const key of ['sources', 'parties', 'transactions', 'collaterals', 'auditLogs', 'stockSymbols', 'stockEntries']) {
     const items = data[key] || []
     for (const item of items) {
       try {
@@ -370,4 +372,65 @@ export async function deleteTodo(id) {
 export async function getPendingTodoCount() {
   const all = await getAllTodos()
   return all.filter(t => t.status !== 'closed').length
+}
+
+export async function getAllStockSymbols() {
+  return allDocs('stock_')
+}
+
+export async function getStockSymbol(id) {
+  return getDb().get(id)
+}
+
+export async function getStockSymbolByName(symbol) {
+  const all = await getAllStockSymbols()
+  return all.find(s => s.symbol === symbol.toUpperCase()) || null
+}
+
+export async function saveStockSymbol(data) {
+  const db = getDb()
+  if (data._id) {
+    const existing = await db.get(data._id)
+    return db.put({ ...existing, ...data })
+  }
+  data._id = 'stock_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  data.createdAt = new Date().toISOString()
+  return db.put(data)
+}
+
+export async function deleteStockSymbol(id) {
+  const db = getDb()
+  const doc = await db.get(id)
+  return db.remove(doc)
+}
+
+export async function getStockEntries(stockId) {
+  const all = await allDocs('stkentry_')
+  return all.filter(e => e.stockId === stockId).sort((a, b) => new Date(b.date) - new Date(a.date))
+}
+
+export async function getActiveStockEntries(stockId) {
+  const all = await getStockEntries(stockId)
+  return all.filter(e => e.remainingQty > 0)
+}
+
+export async function getStockEntry(id) {
+  return getDb().get(id)
+}
+
+export async function saveStockEntry(data) {
+  const db = getDb()
+  if (data._id) {
+    const existing = await db.get(data._id)
+    return db.put({ ...existing, ...data })
+  }
+  data._id = 'stkentry_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  data.createdAt = new Date().toISOString()
+  return db.put(data)
+}
+
+export async function deleteStockEntry(id) {
+  const db = getDb()
+  const doc = await db.get(id)
+  return db.remove(doc)
 }

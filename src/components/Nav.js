@@ -1,6 +1,7 @@
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Home', icon: 'home-outline' },
   { id: 'money-sources', label: 'Sources', icon: 'wallet-outline' },
+  { id: 'stock', label: 'Stock', icon: 'trending-up-outline' },
   { id: 'parties', label: 'Parties', icon: 'people-outline' },
   { id: 'search', label: 'Search', icon: 'search-outline' },
   { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', badge: true },
