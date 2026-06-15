@@ -149,6 +149,26 @@ export async function renderTodos(container, navigate) {
     }
   })
 
+  function updateTodoBadge() {
+    const badge = document.getElementById('todo-badge')
+    const count = todos.filter(t => t.status !== 'closed').length
+    if (count > 0) {
+      if (badge) badge.textContent = count > 99 ? '99+' : count
+      else {
+        const todoLink = document.querySelector('.nav-link[data-route="todos"] .relative')
+        if (todoLink) {
+          const span = document.createElement('span')
+          span.id = 'todo-badge'
+          span.className = 'absolute -top-1 -right-1.5 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none'
+          span.textContent = count > 99 ? '99+' : count
+          todoLink.appendChild(span)
+        }
+      }
+    } else {
+      if (badge) badge.remove()
+    }
+  }
+
   function renderList() {
     const searchVal = document.getElementById('todo-search').value
     const showClosed = document.getElementById('todo-show-closed').dataset.showClosed === 'true'
@@ -219,6 +239,7 @@ export async function renderTodos(container, navigate) {
         await saveTodo(item)
         logAction(item.status === 'closed' ? 'close' : 'reopen', 'todo', item._id, `${item.status === 'closed' ? 'Closed' : 'Reopened'} todo: ${(item.note || '').slice(0, 50)}`)
         showToast(item.status === 'closed' ? 'ToDo closed' : 'ToDo reopened')
+        updateTodoBadge()
         renderList()
       })
     })
@@ -232,6 +253,7 @@ export async function renderTodos(container, navigate) {
         await deleteTodo(item._id)
         logAction('delete', 'todo', item._id, `Deleted todo: ${(item.note || '').slice(0, 50)}`)
         todos = todos.filter(t => t._id !== item._id)
+        updateTodoBadge()
         renderList()
       })
     })
@@ -409,11 +431,12 @@ export async function renderTodos(container, navigate) {
   document.body.appendChild(fab)
 
   document.getElementById('todo-fab').addEventListener('click', async () => {
-    await saveTodo({ note: ' ', targetDate: todayISO(), status: 'open', color: '' })
+    await saveTodo({ note: 'New todo', targetDate: todayISO(), status: 'open', color: '' })
     todos = await getAllTodos()
     sortTodos()
-    logAction('create', 'todo', '', 'Created a new todo')
+    logAction('create', 'todo', '', 'Created todo: New todo')
     showToast('ToDo added — double-tap note to edit')
+    updateTodoBadge()
     renderList()
   })
 

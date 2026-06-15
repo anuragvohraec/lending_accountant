@@ -15,7 +15,7 @@ export async function renderNav(activeId, onNavigate) {
     try {
       const { getPendingTodoCount } = await import('../db/database.js')
       const count = await getPendingTodoCount()
-      if (count > 0) badgeHtml = `<span class="absolute -top-1 -right-1.5 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">${count > 99 ? '99+' : count}</span>`
+      if (count > 0) badgeHtml = `<span id="todo-badge" class="absolute -top-1 -right-1.5 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">${count > 99 ? '99+' : count}</span>`
     } catch {}
   }
 
