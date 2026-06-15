@@ -197,7 +197,7 @@ export async function renderPartyDetail(container, navigate, params) {
 
     renderCollateralList(colls, party, txns, sources, container, navigate, lid)
     renderPrincipalTransactions(principalTxns, sources, party, txns, container, navigate, lid)
-    renderInterestTransactions(interestTxns, sources, party, container, navigate, lid)
+    renderInterestTransactions(interestTxns, sources, party, allTxns, container, navigate, lid)
 
     document.getElementById('add-collateral-btn')?.addEventListener('click', () => showCollateralForm(null, party._id, colls, party, txns, sources, container, navigate, lid))
     document.getElementById('add-debit-btn')?.addEventListener('click', () => showTransactionForm(null, party, sources, txns, container, navigate, 'debit', lid))
@@ -654,7 +654,7 @@ function renderPrincipalTransactions(txns, sources, party, allTxns, container, n
   })
 }
 
-function renderInterestTransactions(txns, sources, party, container, navigate, ledgerId) {
+function renderInterestTransactions(txns, sources, party, allTxns, container, navigate, ledgerId) {
   const el = document.getElementById('interest-txn-list')
   if (txns.length === 0) {
     el.innerHTML = '<div class="empty-state"><ion-icon name="calculator-outline"></ion-icon><p class="text-xs text-gray-400">No interest transactions yet</p></div>'
