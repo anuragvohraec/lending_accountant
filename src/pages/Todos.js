@@ -66,7 +66,7 @@ export async function renderTodos(container, navigate) {
             <button class="todo-sort-opt w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50" data-sort="target">Target date</button>
           </div>
         </div>
-        <button class="p-1.5 rounded-lg text-gray-400 hover:text-primary transition-colors" id="todo-show-closed" title="Include closed">
+        <button class="p-1.5 rounded-lg text-gray-400 hover:text-primary transition-colors" id="todo-show-closed" title="Show closed only">
           <ion-icon name="archive-outline" class="text-lg"></ion-icon>
         </button>
       </div>
@@ -163,7 +163,7 @@ export async function renderTodos(container, navigate) {
         filtered = filtered.filter(t => (t.note || '').toLowerCase().includes(searchVal.toLowerCase()))
       }
     }
-    if (!showClosed) filtered = filtered.filter(t => t.status !== 'closed')
+    filtered = filtered.filter(t => showClosed ? t.status === 'closed' : t.status !== 'closed')
 
     if (filtered.length === 0) {
       el.innerHTML = '<p class="text-xs text-gray-400 text-center py-8">No todos found</p>'
