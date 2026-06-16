@@ -1087,7 +1087,7 @@ async function renderLiveTab() {
           <div class="font-semibold text-xs font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)} (${totalPnLPct >= 0 ? '+' : ''}${totalPnLPct.toFixed(1)}%)</div>
         </div>
       </div>
-      ${liveCount > 0 ? `<div class="text-[10px] text-green-600 mb-2">✓ ${liveCount} of ${rows.length} stocks have live prices</div>` : activeSymbols.length > 0 ? `<div class="text-[10px] text-amber-600 mb-2">Live prices unavailable — showing calculated values</div><div class="text-[9px] text-gray-400 mb-2">${getLastSourceInfo().error || 'Check browser console for details'}</div>` : ''}
+      ${liveCount > 0 ? `<div class="text-[10px] text-green-600 mb-2">✓ ${liveCount} of ${rows.length} stocks have live prices</div>` : activeSymbols.length > 0 ? `<div class="text-[10px] text-amber-600 mb-2">Live prices unavailable — showing calculated values</div>` : ''}
       <table class="w-full text-xs">
         <thead><tr class="text-gray-400 border-b border-gray-100">
           <th class="text-left py-1 pr-1">Stock</th>
