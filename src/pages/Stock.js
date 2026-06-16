@@ -1,9 +1,9 @@
-import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry, getAllStockEntries } from '../db/database.js'
+import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry, deleteStockSymbol, getAllStockEntries } from '../db/database.js'
 import { getSettings, saveSettings } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate } from '../utils/formatters.js'
 import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
 import { renderHeader } from '../components/Header.js'
-import { showModal, showPrompt } from '../components/Modal.js'
+import { showModal, showPrompt, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
@@ -248,6 +248,11 @@ async function showStockMenu() {
           <input type="radio" name="stock-action" value="import" class="text-primary focus:ring-primary" />
           <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="cloud-upload-outline" class="text-primary text-lg"></ion-icon> Import CSV</span>
         </label>
+        <div class="border-t border-gray-200 my-1"></div>
+        <label class="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 cursor-pointer">
+          <input type="radio" name="stock-action" value="delete-all" class="text-red-500 focus:ring-red-500" />
+          <span class="text-sm font-medium flex items-center gap-2 text-red-600"><ion-icon name="trash-outline" class="text-red-500 text-lg"></ion-icon> Delete All Stock Data</span>
+        </label>
       </div>
     `,
     confirmText: 'Go',
@@ -261,6 +266,7 @@ async function showStockMenu() {
   else if (choice === 'add') await addPartner()
   else if (choice === 'export') await exportStockCSV()
   else if (choice === 'import') await importStockCSV()
+  else if (choice === 'delete-all') await deleteAllStockData()
 }
 
 async function showPartnerManager() {
@@ -389,7 +395,7 @@ async function importStockCSV() {
           date: parts[4]?.trim() || '',
           monthlyRate: parseFloat(parts[5]) || stock.monthlyRate,
           minReturn: parseFloat(parts[6]) || stock.minReturn,
-          remainingQty: parseInt(parts[7]) ?? parseInt(parts[2]),
+          remainingQty: parseInt(parts[7]) || parseInt(parts[2]),
           status: parts[8]?.trim() || 'holding',
           soldPrice: parts[9] ? parseFloat(parts[9]) : undefined,
           soldDate: parts[10]?.trim() || undefined,
@@ -544,6 +550,31 @@ function initParetoChart(elementId, data, label, color, fmtVal, textFn) {
       },
     },
   })
+}
+
+async function deleteAllStockData() {
+  const confirmed = await showConfirm({
+    title: 'Delete All Stock Data?',
+    message: 'This will permanently delete all stock symbols and all buy/sell entries. This cannot be undone.',
+    confirmText: 'Delete Everything',
+    danger: true,
+  })
+  if (!confirmed) return
+
+  const entries = await getAllStockEntries()
+  for (const e of entries) {
+    await deleteStockEntry(e._id)
+  }
+  for (const s of allStocks) {
+    await deleteStockSymbol(s._id)
+  }
+
+  logAction('delete', 'stock_data', '', `Deleted ${entries.length} entries and ${allStocks.length} symbols`)
+  showToast(`Deleted ${allStocks.length} symbols and ${entries.length} entries`)
+
+  allStocks = await getAllStockSymbols()
+  allStocks.sort((a, b) => (a.symbol || '').localeCompare(b.symbol || ''))
+  renderStockList()
 }
 
 async function showAddStockForm() {
@@ -717,7 +748,7 @@ async function showStockDetail(stockId) {
             <th class="text-right py-1 pr-1">SD</th>
             <th class="text-right py-1">P&L</th>
           </tr></thead>
-          <tbody>${sold.map(e => {
+          <tbody>${[...sold].sort((a, b) => new Date(b.soldDate || b.date) - new Date(a.soldDate || a.date)).map(e => {
             const profit = e.soldPrice ? (e.soldPrice - e.price) * e.qty : 0
             return `
             <tr class="border-b border-gray-50">
@@ -1177,14 +1208,32 @@ async function showSellForm(stockId, preselectedPartner) {
   }
 
   for (const { entry, take } of allocations) {
-    entry.remainingQty -= take
-    entry.updatedAt = new Date().toISOString()
-    if (entry.remainingQty === 0) {
+    const rem = Number(entry.remainingQty) || 0
+    if (take >= rem) {
+      entry.remainingQty = 0
       entry.status = 'sold'
       entry.soldPrice = result.price
       entry.soldDate = result.date
+      entry.updatedAt = new Date().toISOString()
+      await saveStockEntry(entry)
+    } else {
+      entry.remainingQty = rem - take
+      entry.updatedAt = new Date().toISOString()
+      await saveStockEntry(entry)
+      await saveStockEntry({
+        stockId: entry.stockId,
+        partnerName: entry.partnerName,
+        qty: take,
+        price: entry.price,
+        date: entry.date,
+        monthlyRate: entry.monthlyRate,
+        minReturn: entry.minReturn,
+        remainingQty: 0,
+        status: 'sold',
+        soldPrice: result.price,
+        soldDate: result.date,
+      })
     }
-    await saveStockEntry(entry)
   }
 
   logAction('update', 'stock_entry', '', `Sold ${result.qty} units of ${stock.symbol} @ ${result.price} (LIFO for ${result.partnerName})`)

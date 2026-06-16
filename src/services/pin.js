@@ -47,7 +47,7 @@ export async function setupWebAuthn() {
   const s = await getSettings()
   s.webauthnCredentialId = base64url(cred.rawId)
   s.webauthnRpId = window.location.hostname
-  delete s.pin
+  s.pin = ''
   await saveSettings(s)
 }
 
@@ -76,8 +76,8 @@ export async function authenticateWithWebAuthn() {
 export async function setPin(pin) {
   const s = await getSettings()
   s.pin = pin
-  delete s.webauthnCredentialId
-  delete s.webauthnRpId
+  s.webauthnCredentialId = null
+  s.webauthnRpId = null
   await saveSettings(s)
 }
 
@@ -96,7 +96,7 @@ export async function getLockMethod() {
 export async function clearAuth() {
   const s = await getSettings()
   s.pin = ''
-  delete s.webauthnCredentialId
-  delete s.webauthnRpId
+  s.webauthnCredentialId = null
+  s.webauthnRpId = null
   await saveSettings(s)
 }
