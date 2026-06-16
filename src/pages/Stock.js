@@ -714,6 +714,38 @@ function calcPnL(e) {
   return e.soldPrice ? (e.soldPrice - e.price) * e.qty : 0
 }
 
+function calcXIRR(entries) {
+  if (entries.length === 0) return '—'
+  const flows = []
+  let earliest = null
+  for (const e of entries) {
+    const buy = new Date(e.date + 'T00:00:00')
+    const sell = new Date(e.soldDate + 'T00:00:00')
+    if (!earliest || buy < earliest) earliest = buy
+    flows.push({ date: buy, amount: -e.qty * e.price })
+    flows.push({ date: sell, amount: e.qty * e.soldPrice })
+  }
+  if (!earliest) return '—'
+  flows.sort((a, b) => a.date - b.date)
+  const days = flows.map(f => (f.date - earliest) / 86400000)
+  const amounts = flows.map(f => f.amount)
+  let rate = 0.1
+  for (let i = 0; i < 100; i++) {
+    let f = 0, df = 0
+    for (let j = 0; j < amounts.length; j++) {
+      const t = days[j] / 365
+      const denom = Math.pow(1 + rate, t)
+      f += amounts[j] / denom
+      df -= amounts[j] * t / Math.pow(1 + rate, t + 1)
+    }
+    if (Math.abs(f) < 1e-8) break
+    const newRate = rate - f / df
+    if (newRate <= -0.9999) { rate = -0.9999; break }
+    rate = newRate
+  }
+  return (rate * 100).toFixed(1)
+}
+
 function calcMonthlyPnL(entries) {
   const byMonth = {}
   for (const e of entries) {
@@ -741,22 +773,6 @@ function calcYearlyPnL(entries) {
   return Object.entries(byYear)
     .map(([y, pnl]) => ({ year: parseInt(y), pnl }))
     .sort((a, b) => a.year - b.year)
-}
-
-function calcTargetProgress(entries, targetYear, targetMonth) {
-  const now = new Date()
-  const curYear = now.getFullYear().toString()
-  const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
-
-  let yearPnL = 0
-  let monthPnL = 0
-  for (const e of entries) {
-    if (!e.soldDate || e.status !== 'sold') continue
-    const pnl = calcPnL(e)
-    if (e.soldDate.startsWith(curYear)) yearPnL += pnl
-    if (e.soldDate.startsWith(curMonth)) monthPnL += pnl
-  }
-  return { yearPnL, monthPnL }
 }
 
 async function renderAnalysisSection() {
@@ -833,27 +849,14 @@ async function renderReturnsTab() {
   let annualizedReturn = '—'
   let avgHoldingDays = 0
   if (soldEntries.length > 0) {
-    let weightedSum = 0
-    let totalWeight = 0
     let totalDays = 0
     for (const e of soldEntries) {
       const buy = new Date(e.date + 'T00:00:00')
       const sell = new Date((e.soldDate || e.date) + 'T00:00:00')
-      const days = Math.max(1, (sell - buy) / 86400000)
-      totalDays += days
-      const cost = e.qty * e.price
-      const pnl = calcPnL(e)
-      if (cost > 0) {
-        const tradeReturn = pnl / cost
-        const ann = ((1 + tradeReturn) ** (365 / days) - 1) * 100
-        weightedSum += ann * cost
-        totalWeight += cost
-      }
+      totalDays += Math.max(1, (sell - buy) / 86400000)
     }
     avgHoldingDays = totalDays / soldEntries.length
-    if (totalWeight > 0) {
-      annualizedReturn = (weightedSum / totalWeight).toFixed(1)
-    }
+    annualizedReturn = calcXIRR(soldEntries)
   }
 
   const activeCost = activeEntries.reduce((s, e) => s + e.remainingQty * e.price, 0)
@@ -978,8 +981,8 @@ function showMetricExplanation(key) {
       body: 'Total return on ALL capital deployed — both closed trades and current holdings.\n\nFormula:\n(Realized P&L + Unrealized P&L) / Total Cost Basis × 100\n\nRealized P&L: profits from sold trades\nUnrealized P&L: calculated gain on holdings still active\n  (CurrentValue − BuyPrice) × RemainingQty\n\nThis tells you how your entire portfolio is performing right now.',
     },
     'annualized-return': {
-      title: 'Annualized Return',
-      body: 'The average per-year return across all closed trades, weighted by trade size.\n\nFormula (per trade):\n((1 + Trade P&L / Trade Cost) ^ (365 / Holding Days) − 1) × 100\n\nThen: value-weighted average of all trade-level annualized returns.\n(Larger trades contribute more to the final number.)\n\nThis is more accurate than using aggregate P&L with average days,\nbecause it doesn\'t let a few small quick trades distort the result.',
+      title: 'Annualized Return (XIRR)',
+      body: 'Calculated using the XIRR (Extended Internal Rate of Return) method — the industry-standard approach used by mutual funds and portfolio managers.\n\nHow it works:\n1. Every buy is treated as a cash outflow (−Qty × Price)\n2. Every sell is treated as a cash inflow (+Qty × SoldPrice)\n3. All cash flows are placed on their actual dates\n4. XIRR finds the single annualized rate that makes Net Present Value = 0\n\nWhy XIRR is better:\n• No arbitrary minimum-day floors\n• Handles irregular holding periods naturally\n• Short trades don\'t mathematically explode to infinity\n• Matches Excel\'s XIRR function\n\nFormula:\nΣ CFᵢ / (1 + r)^(tᵢ/365) = 0\n→ solved for r using Newton\'s method',
     },
     'realized-roi': {
       title: 'Realized ROI (Simple)',
@@ -1011,68 +1014,84 @@ async function renderTargetsTab() {
   if (!content) return
 
   const settings = await getSettings()
-  let monthlyTarget = settings.stockMonthlyTarget || 0
-  let yearlyTarget = settings.stockYearlyTarget || 0
+  const monthlyTargetPct = parseFloat(settings.stockMonthlyTargetPct) || 0
 
   const allEntries = await getAllStockEntries()
-  const { yearPnL, monthPnL } = calcTargetProgress(allEntries, yearlyTarget, monthlyTarget)
-  const monthPct = monthlyTarget > 0 ? Math.min(100, (monthPnL / monthlyTarget * 100)).toFixed(0) : 0
-  const yearPct = yearlyTarget > 0 ? Math.min(100, (yearPnL / yearlyTarget * 100)).toFixed(0) : 0
+  const soldEntries = allEntries.filter(e => e.soldDate && e.status === 'sold')
+
+  const annualTargetSimple = monthlyTargetPct * 12
+  const annualTargetCAGR = monthlyTargetPct > 0 ? ((1 + monthlyTargetPct / 100) ** 12 - 1) * 100 : 0
+
+  const xirrVal = calcXIRR(soldEntries)
+  const xirrNum = xirrVal !== '—' ? parseFloat(xirrVal) : null
+  const actualMonthlyCAGR = xirrNum !== null ? ((1 + xirrNum / 100) ** (1 / 12) - 1) * 100 : null
+
+  const monthPct = monthlyTargetPct > 0 && actualMonthlyCAGR !== null
+    ? Math.min(100, (actualMonthlyCAGR / monthlyTargetPct * 100)).toFixed(0) : 0
+  const yearPct = monthlyTargetPct > 0 && xirrNum !== null
+    ? Math.min(100, (xirrNum / annualTargetSimple * 100)).toFixed(0) : 0
+
+  const targetSet = monthlyTargetPct > 0
 
   content.innerHTML = `
     <div class="space-y-4">
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="text-xs text-gray-400 block mb-1">Monthly Target (₹)</label>
-          <input class="input text-xs" id="target-monthly" type="number" step="1000" value="${monthlyTarget || ''}" placeholder="0" />
-        </div>
-        <div>
-          <label class="text-xs text-gray-400 block mb-1">Yearly Target (₹)</label>
-          <input class="input text-xs" id="target-yearly" type="number" step="10000" value="${yearlyTarget || ''}" placeholder="0" />
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Monthly Return Target (%)</label>
+        <input class="input text-xs" id="target-monthly-pct" type="number" step="0.1" min="0" max="100"
+          value="${monthlyTargetPct || ''}" placeholder="e.g. 2" />
+        <div class="text-[10px] text-gray-400 mt-1">
+          ${monthlyTargetPct > 0 ? `
+            Annual target: ${annualTargetSimple.toFixed(0)}% simple &middot; ${annualTargetCAGR.toFixed(1)}% CAGR
+          ` : 'Set a monthly % target above'}
         </div>
       </div>
-      <button class="btn-primary text-xs w-full py-1.5" id="save-targets-btn">Save Targets</button>
+      <button class="btn-primary text-xs w-full py-1.5" id="save-targets-btn">Save Target</button>
 
-      ${(monthlyTarget > 0 || yearlyTarget > 0) ? `
+      ${xirrNum === null ? '<p class="text-xs text-gray-400 text-center py-3">No sold trades yet</p>' : `
       <hr class="border-gray-100">
       <div class="space-y-3">
-        ${monthlyTarget > 0 ? `
         <div>
           <div class="flex justify-between text-xs mb-1">
-            <span class="text-gray-500">This Month</span>
-            <span class="font-mono font-semibold ${monthPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(monthPnL)} / ${formatCurrencyFull(monthlyTarget)}</span>
+            <span class="text-gray-500">Monthly Return (CAGR)</span>
+            <span class="font-mono font-semibold ${actualMonthlyCAGR >= 0 ? 'text-green-600' : 'text-red-600'}">
+              ${actualMonthlyCAGR.toFixed(2)}%
+              ${targetSet ? '/ ' + monthlyTargetPct.toFixed(1) + '% target' : ''}
+            </span>
           </div>
           <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-            <div class="h-full rounded-full transition-all duration-500 ${monthPnL >= 0 ? 'bg-green-500' : 'bg-red-400'}" style="width:${monthPct}%"></div>
+            <div class="h-full rounded-full transition-all duration-500 ${actualMonthlyCAGR >= 0 ? 'bg-green-500' : 'bg-red-400'}" style="width:${targetSet ? monthPct : 100}%"></div>
           </div>
-          <div class="text-right text-[10px] text-gray-400 mt-0.5">${monthPct}% achieved</div>
+          <div class="text-right text-[10px] text-gray-400 mt-0.5">
+            ${targetSet ? monthPct + '% of target' : (actualMonthlyCAGR >= 0 ? '+' : '') + actualMonthlyCAGR.toFixed(2) + '% / mo'}
+          </div>
         </div>
-        ` : ''}
-        ${yearlyTarget > 0 ? `
+
         <div>
           <div class="flex justify-between text-xs mb-1">
-            <span class="text-gray-500">This Year</span>
-            <span class="font-mono font-semibold ${yearPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(yearPnL)} / ${formatCurrencyFull(yearlyTarget)}</span>
+            <span class="text-gray-500">Annual Return (XIRR)</span>
+            <span class="font-mono font-semibold ${xirrNum >= 0 ? 'text-green-600' : 'text-red-600'}">
+              ${xirrVal}%
+              ${targetSet ? '/ ' + annualTargetSimple.toFixed(0) + '% target' : ''}
+            </span>
           </div>
           <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-            <div class="h-full rounded-full transition-all duration-500 ${yearPnL >= 0 ? 'bg-indigo-500' : 'bg-red-400'}" style="width:${yearPct}%"></div>
+            <div class="h-full rounded-full transition-all duration-500 ${xirrNum >= 0 ? 'bg-indigo-500' : 'bg-red-400'}" style="width:${targetSet ? yearPct : 100}%"></div>
           </div>
-          <div class="text-right text-[10px] text-gray-400 mt-0.5">${yearPct}% achieved</div>
+          <div class="text-right text-[10px] text-gray-400 mt-0.5">
+            ${targetSet ? yearPct + '% of target' : xirrVal + '% / yr'}
+          </div>
         </div>
-        ` : ''}
       </div>
-      ` : '<p class="text-xs text-gray-400 text-center py-3">Set targets above to track progress</p>'}
+      `}
     </div>
   `
 
   document.getElementById('save-targets-btn').addEventListener('click', async () => {
-    const m = parseFloat(document.getElementById('target-monthly')?.value) || 0
-    const y = parseFloat(document.getElementById('target-yearly')?.value) || 0
+    const pct = parseFloat(document.getElementById('target-monthly-pct')?.value) || 0
     const s = await getSettings()
-    s.stockMonthlyTarget = m
-    s.stockYearlyTarget = y
+    s.stockMonthlyTargetPct = pct
     await saveSettings(s)
-    showToast('Targets saved')
+    showToast('Target saved')
     await renderTargetsTab()
   })
 }
