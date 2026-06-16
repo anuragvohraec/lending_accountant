@@ -830,18 +830,31 @@ async function renderReturnsTab() {
   const totalInvested = soldEntries.reduce((s, e) => s + e.qty * e.price, 0)
   const returnPct = totalInvested > 0 ? (totalPnL / totalInvested * 100).toFixed(1) : 0
 
+  let annualizedReturn = '—'
   let avgHoldingDays = 0
   if (soldEntries.length > 0) {
-    const totalDays = soldEntries.reduce((s, e) => {
+    let weightedSum = 0
+    let totalWeight = 0
+    let totalDays = 0
+    for (const e of soldEntries) {
       const buy = new Date(e.date + 'T00:00:00')
       const sell = new Date((e.soldDate || e.date) + 'T00:00:00')
-      return s + Math.max(1, (sell - buy) / 86400000)
-    }, 0)
+      const days = Math.max(1, (sell - buy) / 86400000)
+      totalDays += days
+      const cost = e.qty * e.price
+      const pnl = calcPnL(e)
+      if (cost > 0) {
+        const tradeReturn = pnl / cost
+        const ann = ((1 + tradeReturn) ** (365 / days) - 1) * 100
+        weightedSum += ann * cost
+        totalWeight += cost
+      }
+    }
     avgHoldingDays = totalDays / soldEntries.length
+    if (totalWeight > 0) {
+      annualizedReturn = (weightedSum / totalWeight).toFixed(1)
+    }
   }
-  const annualizedReturn = (totalInvested > 0 && avgHoldingDays > 0)
-    ? (((1 + totalPnL / totalInvested) ** (365 / avgHoldingDays) - 1) * 100).toFixed(1)
-    : '—'
 
   const activeCost = activeEntries.reduce((s, e) => s + e.remainingQty * e.price, 0)
   let unrealizedPnL = 0
@@ -966,7 +979,7 @@ function showMetricExplanation(key) {
     },
     'annualized-return': {
       title: 'Annualized Return',
-      body: 'The simple return converted to a per-year rate, accounting for how long your money was invested.\n\nFormula:\n((1 + Total P&L / Total Invested) ^ (365 / Avg Holding Days) − 1) × 100\n\nAvg Holding Days = average days between buy and sell across all closed trades.\n\nExample: 7.7% return over 18 months = ~5.1% per year.\nThis lets you compare returns across different timeframes fairly.',
+      body: 'The average per-year return across all closed trades, weighted by trade size.\n\nFormula (per trade):\n((1 + Trade P&L / Trade Cost) ^ (365 / Holding Days) − 1) × 100\n\nThen: value-weighted average of all trade-level annualized returns.\n(Larger trades contribute more to the final number.)\n\nThis is more accurate than using aggregate P&L with average days,\nbecause it doesn\'t let a few small quick trades distort the result.',
     },
     'realized-roi': {
       title: 'Realized ROI (Simple)',
