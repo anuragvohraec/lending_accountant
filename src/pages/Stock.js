@@ -7,7 +7,7 @@ import { showModal, showPrompt, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
-import { fetchPrices, getCachedPrice, isStale } from '../services/stockPrice.js'
+import { fetchPrices, getCachedPrice, isStale, getLastSourceInfo } from '../services/stockPrice.js'
 import { calcDaysHeld, calcCurrentValue, calcV1, calcV2, calcAvgBuyPrice, calcAvgDays, calcTotalQty, calcAggregatedCurrentValue, sellLIFO } from '../services/stockCalc.js'
 import { escHtml } from '../utils/helpers.js'
 
@@ -996,12 +996,13 @@ async function renderLiveTab() {
     return stock ? stock.symbol : null
   }).filter(Boolean))]
 
-  content.innerHTML = `
+    content.innerHTML = `
     <div class="space-y-3">
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-400">Last updated: <span id="live-update-time">—</span></span>
         <button class="btn-ghost text-xs px-2 py-1" id="refresh-live-btn"><ion-icon name="refresh-outline"></ion-icon> Refresh</button>
       </div>
+      <div id="live-source-info" class="text-[9px] text-gray-400 hidden"></div>
       <div id="live-body" class="text-xs text-gray-400 text-center py-4">Fetching live prices...</div>
     </div>
   `
@@ -1016,6 +1017,22 @@ async function renderLiveTab() {
     const updateTime = new Date().toLocaleTimeString()
     const updateEl = document.getElementById('live-update-time')
     if (updateEl) updateEl.textContent = updateTime
+
+    const srcInfo = getLastSourceInfo()
+    const srcEl = document.getElementById('live-source-info')
+    if (srcEl) {
+      if (srcInfo.source) {
+        srcEl.textContent = `Source: ${srcInfo.source}`
+        srcEl.className = 'text-[9px] text-green-600'
+        srcEl.classList.remove('hidden')
+      } else if (srcInfo.error) {
+        srcEl.textContent = srcInfo.error
+        srcEl.className = 'text-[9px] text-amber-600'
+        srcEl.classList.remove('hidden')
+      } else {
+        srcEl.classList.add('hidden')
+      }
+    }
 
     const rows = []
     let totalCost = 0
@@ -1070,7 +1087,7 @@ async function renderLiveTab() {
           <div class="font-semibold text-xs font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)} (${totalPnLPct >= 0 ? '+' : ''}${totalPnLPct.toFixed(1)}%)</div>
         </div>
       </div>
-      ${liveCount > 0 ? `<div class="text-[10px] text-green-600 mb-2">✓ ${liveCount} of ${rows.length} stocks have live prices</div>` : activeSymbols.length > 0 ? `<div class="text-[10px] text-amber-600 mb-2">Live prices unavailable — showing calculated values</div>` : ''}
+      ${liveCount > 0 ? `<div class="text-[10px] text-green-600 mb-2">✓ ${liveCount} of ${rows.length} stocks have live prices</div>` : activeSymbols.length > 0 ? `<div class="text-[10px] text-amber-600 mb-2">Live prices unavailable — showing calculated values</div><div class="text-[9px] text-gray-400 mb-2">${getLastSourceInfo().error || 'Check browser console for details'}</div>` : ''}
       <table class="w-full text-xs">
         <thead><tr class="text-gray-400 border-b border-gray-100">
           <th class="text-left py-1 pr-1">Stock</th>
