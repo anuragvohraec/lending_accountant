@@ -818,6 +818,7 @@ async function renderReturnsTab() {
 
   const allEntries = await getAllStockEntries()
   const soldEntries = allEntries.filter(e => e.soldDate && e.status === 'sold')
+  const activeEntries = allEntries.filter(e => e.remainingQty > 0)
   const monthly = calcMonthlyPnL(allEntries)
   const yearly = calcYearlyPnL(allEntries)
   const totalPnL = soldEntries.reduce((s, e) => s + calcPnL(e), 0)
@@ -829,6 +830,30 @@ async function renderReturnsTab() {
   const totalInvested = soldEntries.reduce((s, e) => s + e.qty * e.price, 0)
   const returnPct = totalInvested > 0 ? (totalPnL / totalInvested * 100).toFixed(1) : 0
 
+  let avgHoldingDays = 0
+  if (soldEntries.length > 0) {
+    const totalDays = soldEntries.reduce((s, e) => {
+      const buy = new Date(e.date + 'T00:00:00')
+      const sell = new Date((e.soldDate || e.date) + 'T00:00:00')
+      return s + Math.max(1, (sell - buy) / 86400000)
+    }, 0)
+    avgHoldingDays = totalDays / soldEntries.length
+  }
+  const annualizedReturn = (totalInvested > 0 && avgHoldingDays > 0)
+    ? (((1 + totalPnL / totalInvested) ** (365 / avgHoldingDays) - 1) * 100).toFixed(1)
+    : '—'
+
+  const activeCost = activeEntries.reduce((s, e) => s + e.remainingQty * e.price, 0)
+  let unrealizedPnL = 0
+  for (const e of activeEntries) {
+    const days = calcDaysHeld(e.date)
+    const cv = calcCurrentValue(e.price, e.monthlyRate, e.minReturn, days)
+    unrealizedPnL += (cv - e.price) * e.remainingQty
+  }
+  const totalDeployed = totalInvested + activeCost
+  const portfolioPnL = totalPnL + unrealizedPnL
+  const portfolioReturn = totalDeployed > 0 ? (portfolioPnL / totalDeployed * 100).toFixed(1) : '—'
+
   content.innerHTML = `
     <div class="space-y-4">
       <div class="grid grid-cols-2 gap-2 text-xs">
@@ -837,8 +862,19 @@ async function renderReturnsTab() {
           <div class="font-semibold font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)}</div>
         </div>
         <div class="bg-gray-50 rounded-lg p-2.5">
-          <div class="text-gray-400">Return on Investment</div>
+          <div class="text-gray-400">Portfolio Return</div>
+          <div class="font-semibold ${portfolioPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${portfolioReturn}%</div>
+          <div class="text-[9px] text-gray-400">Realized + Unrealized</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2.5">
+          <div class="text-gray-400">Annualized Return</div>
+          <div class="font-semibold ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${annualizedReturn}%</div>
+          <div class="text-[9px] text-gray-400">${avgHoldingDays > 0 ? Math.round(avgHoldingDays) + 'd avg hold' : '—'}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2.5">
+          <div class="text-gray-400">Realized ROI</div>
           <div class="font-semibold ${returnPct >= 0 ? 'text-green-600' : 'text-red-600'}">${returnPct}%</div>
+          <div class="text-[9px] text-gray-400">Simple (no time factor)</div>
         </div>
         <div class="bg-gray-50 rounded-lg p-2.5">
           <div class="text-gray-400">Win Rate</div>
