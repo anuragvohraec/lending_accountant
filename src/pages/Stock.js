@@ -1,7 +1,7 @@
 import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry, deleteStockSymbol, getAllStockEntries } from '../db/database.js'
 import { getSettings, saveSettings } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate } from '../utils/formatters.js'
-import { dateInputHTML, setupDateInput, getDateInputValue } from '../utils/dateInput.js'
+import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
 import { renderHeader } from '../components/Header.js'
 import { showModal, showPrompt, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
@@ -26,6 +26,7 @@ export async function renderStock(container, navigate) {
     <div class="slide-up">
       <div id="stock-summary" class="card-flat mb-3 hidden"></div>
       <div id="stock-pareto" class="mb-3"></div>
+      <div id="stock-trade-viewer" class="mb-3"></div>
       <div id="stock-list" class="space-y-2"></div>
     </div>
   `
@@ -53,6 +54,8 @@ export async function renderStock(container, navigate) {
   renderStockList()
 
   document.getElementById('stock-menu-btn').addEventListener('click', () => showStockMenu())
+
+  renderTradeViewerTrigger()
 
   const fab = document.createElement('div')
   fab.id = 'app-fab'
@@ -575,6 +578,127 @@ async function deleteAllStockData() {
   allStocks = await getAllStockSymbols()
   allStocks.sort((a, b) => (a.symbol || '').localeCompare(b.symbol || ''))
   renderStockList()
+}
+
+async function renderTradeViewerTrigger() {
+  const el = document.getElementById('stock-trade-viewer')
+  if (!el) return
+  el.innerHTML = `
+    <div class="card-flat cursor-pointer" id="trade-viewer-trigger">
+      <div class="flex items-center gap-2">
+        <ion-icon name="calendar-outline" class="text-primary text-sm"></ion-icon>
+        <span class="text-sm font-semibold">View Trades by Date</span>
+      </div>
+    </div>
+  `
+  el.querySelector('#trade-viewer-trigger').addEventListener('click', () => showTradeByDateModal())
+}
+
+function shiftDate(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+async function showTradeByDateModal() {
+  const today = new Date().toISOString().split('T')[0]
+
+  async function renderTradeContent(dateStr) {
+    const allEntries = await getAllStockEntries()
+    const symbolMap = {}
+    for (const s of allStocks) symbolMap[s._id] = s.symbol
+
+    const rows = []
+    for (const e of allEntries) {
+      if (e.date === dateStr) {
+        rows.push({ partnerName: e.partnerName || '', symbol: symbolMap[e.stockId] || '', trade: 'B', qty: e.qty, price: e.price })
+      }
+      if (e.soldDate === dateStr && e.status === 'sold') {
+        rows.push({ partnerName: e.partnerName || '', symbol: symbolMap[e.stockId] || '', trade: 'S', qty: e.qty, price: e.soldPrice })
+      }
+    }
+
+    rows.sort((a, b) => {
+      const pc = (a.partnerName || '').localeCompare(b.partnerName || '')
+      if (pc !== 0) return pc
+      return (a.symbol || '').localeCompare(b.symbol || '')
+    })
+
+    const body = document.getElementById('trade-date-body')
+    if (!body) return
+
+    if (rows.length === 0) {
+      body.innerHTML = '<p class="text-xs text-gray-400 text-center py-6">No trades found for this date</p>'
+      return
+    }
+
+    body.innerHTML = `
+      <table class="w-full text-xs">
+        <thead><tr class="text-gray-400 border-b border-gray-100">
+          <th class="text-left py-1.5 pr-1">Partner</th>
+          <th class="text-left py-1.5 pr-1">Stock</th>
+          <th class="text-center py-1.5 pr-1">Trade</th>
+          <th class="text-right py-1.5 pr-1">Qty</th>
+          <th class="text-right py-1.5">Price</th>
+        </tr></thead>
+        <tbody>${rows.map(r => `
+          <tr class="border-b border-gray-50">
+            <td class="py-1.5 pr-1 text-gray-600">${escHtml(r.partnerName)}</td>
+            <td class="py-1.5 pr-1 font-semibold">${escHtml(r.symbol)}</td>
+            <td class="py-1.5 pr-1 text-center"><span class="inline-block w-5 h-5 rounded text-xs font-bold leading-5 ${r.trade === 'B' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${r.trade}</span></td>
+            <td class="py-1.5 pr-1 text-right font-mono">${r.qty}</td>
+            <td class="py-1.5 text-right font-mono">${formatCurrencyFull(r.price)}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+      <div class="text-[10px] text-gray-400 text-center pt-2">${rows.length} trade${rows.length !== 1 ? 's' : ''}</div>
+    `
+  }
+
+  const dateId = 'trade-date'
+
+  const content = `
+    <div>
+      <div class="flex items-center gap-1.5 mb-3">
+        <button class="btn-ghost text-xs px-2 py-1" id="trade-prev-day"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        ${dateInputHTML({id: dateId, value: today})}
+        <button class="btn-ghost text-xs px-2 py-1" id="trade-next-day"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+      </div>
+      <div id="trade-date-body" class="max-h-80 overflow-y-auto"></div>
+    </div>
+  `
+
+  await showModal({
+    title: 'Trades by Date',
+    content,
+    confirmText: 'Close',
+    showCancel: false,
+    onMounted: () => {
+      setupDateInput(dateId)
+      renderTradeContent(today)
+
+      document.getElementById('trade-prev-day').addEventListener('click', () => {
+        const cur = getDateInputValue(dateId) || today
+        const newDate = shiftDate(cur, -1)
+        setDateInputValue(dateId, newDate)
+        renderTradeContent(newDate)
+      })
+      document.getElementById('trade-next-day').addEventListener('click', () => {
+        const cur = getDateInputValue(dateId) || today
+        const newDate = shiftDate(cur, 1)
+        setDateInputValue(dateId, newDate)
+        renderTradeContent(newDate)
+      })
+      document.getElementById(dateId).addEventListener('change', () => {
+        const val = getDateInputValue(dateId)
+        if (val) renderTradeContent(val)
+      })
+      document.getElementById(dateId + '-native').addEventListener('change', () => {
+        const val = getDateInputValue(dateId)
+        if (val) renderTradeContent(val)
+      })
+    },
+  })
 }
 
 async function showAddStockForm() {
