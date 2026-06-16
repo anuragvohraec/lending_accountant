@@ -7,6 +7,7 @@ import { showModal, showPrompt, showConfirm } from '../components/Modal.js'
 import { showToast } from '../components/Toast.js'
 import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
+import { fetchPrices, getCachedPrice, isStale } from '../services/stockPrice.js'
 import { calcDaysHeld, calcCurrentValue, calcV1, calcV2, calcAvgBuyPrice, calcAvgDays, calcTotalQty, calcAggregatedCurrentValue, sellLIFO } from '../services/stockCalc.js'
 import { escHtml } from '../utils/helpers.js'
 
@@ -27,6 +28,7 @@ export async function renderStock(container, navigate) {
       <div id="stock-summary" class="card-flat mb-3 hidden"></div>
       <div id="stock-pareto" class="mb-3"></div>
       <div id="stock-trade-viewer" class="mb-3"></div>
+      <div id="stock-analysis" class="mb-3"></div>
       <div id="stock-list" class="space-y-2"></div>
     </div>
   `
@@ -56,6 +58,7 @@ export async function renderStock(container, navigate) {
   document.getElementById('stock-menu-btn').addEventListener('click', () => showStockMenu())
 
   renderTradeViewerTrigger()
+  renderAnalysisSection()
 
   const fab = document.createElement('div')
   fab.id = 'app-fab'
@@ -699,6 +702,402 @@ async function showTradeByDateModal() {
       })
     },
   })
+}
+
+function getMonthLabel(ym) {
+  const d = new Date(ym + '-01T00:00:00')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return months[d.getMonth()] + ' ' + d.getFullYear().toString().slice(-2)
+}
+
+function calcPnL(e) {
+  return e.soldPrice ? (e.soldPrice - e.price) * e.qty : 0
+}
+
+function calcMonthlyPnL(entries) {
+  const byMonth = {}
+  for (const e of entries) {
+    if (!e.soldDate || e.status !== 'sold') continue
+    const m = e.soldDate.slice(0, 7)
+    byMonth[m] = (byMonth[m] || 0) + calcPnL(e)
+  }
+  const result = []
+  const now = new Date()
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+    result.push({ ym: key, pnl: byMonth[key] || 0 })
+  }
+  return result
+}
+
+function calcYearlyPnL(entries) {
+  const byYear = {}
+  for (const e of entries) {
+    if (!e.soldDate || e.status !== 'sold') continue
+    const y = e.soldDate.slice(0, 4)
+    byYear[y] = (byYear[y] || 0) + calcPnL(e)
+  }
+  return Object.entries(byYear)
+    .map(([y, pnl]) => ({ year: parseInt(y), pnl }))
+    .sort((a, b) => a.year - b.year)
+}
+
+function calcTargetProgress(entries, targetYear, targetMonth) {
+  const now = new Date()
+  const curYear = now.getFullYear().toString()
+  const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+
+  let yearPnL = 0
+  let monthPnL = 0
+  for (const e of entries) {
+    if (!e.soldDate || e.status !== 'sold') continue
+    const pnl = calcPnL(e)
+    if (e.soldDate.startsWith(curYear)) yearPnL += pnl
+    if (e.soldDate.startsWith(curMonth)) monthPnL += pnl
+  }
+  return { yearPnL, monthPnL }
+}
+
+async function renderAnalysisSection() {
+  const el = document.getElementById('stock-analysis')
+  if (!el) return
+
+  el.innerHTML = `
+    <div class="card-flat">
+      <div class="flex items-center justify-between cursor-pointer select-none" id="analysis-toggle">
+        <div class="flex items-center gap-2">
+          <ion-icon name="analytics-outline" class="text-primary text-sm"></ion-icon>
+          <span class="text-sm font-semibold">Analysis</span>
+        </div>
+        <ion-icon name="chevron-down-outline" class="text-gray-400 transition-transform" id="analysis-chevron"></ion-icon>
+      </div>
+      <div id="analysis-body" class="mt-3 hidden">
+        <div class="flex gap-2 mb-3">
+          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-primary text-white" data-tab="returns">Returns</button>
+          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="targets">Targets</button>
+          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="live">Live Prices</button>
+        </div>
+        <div id="analysis-content">
+          <div class="text-xs text-gray-400 text-center py-4">Open to load analysis</div>
+        </div>
+      </div>
+    </div>
+  `
+
+  let loaded = false
+
+  document.getElementById('analysis-toggle').addEventListener('click', async () => {
+    const body = document.getElementById('analysis-body')
+    const chevron = document.getElementById('analysis-chevron')
+    const wasHidden = body.classList.contains('hidden')
+    body.classList.toggle('hidden')
+    chevron.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)'
+    if (!wasHidden || loaded) return
+    loaded = true
+    await renderReturnsTab()
+  })
+
+  document.querySelectorAll('.analysis-tab').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      document.querySelectorAll('.analysis-tab').forEach(t => {
+        t.className = 'analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600'
+      })
+      btn.className = 'analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-primary text-white'
+      const tab = btn.dataset.tab
+      if (tab === 'returns') await renderReturnsTab()
+      else if (tab === 'targets') await renderTargetsTab()
+      else if (tab === 'live') await renderLiveTab()
+    })
+  })
+}
+
+async function renderReturnsTab() {
+  const content = document.getElementById('analysis-content')
+  if (!content) return
+
+  const allEntries = await getAllStockEntries()
+  const soldEntries = allEntries.filter(e => e.soldDate && e.status === 'sold')
+  const monthly = calcMonthlyPnL(allEntries)
+  const yearly = calcYearlyPnL(allEntries)
+  const totalPnL = soldEntries.reduce((s, e) => s + calcPnL(e), 0)
+  const winCount = soldEntries.filter(e => calcPnL(e) > 0).length
+  const lossCount = soldEntries.filter(e => calcPnL(e) < 0).length
+  const totalTrades = soldEntries.length
+  const winRate = totalTrades > 0 ? (winCount / totalTrades * 100).toFixed(0) : 0
+  const avgReturn = totalTrades > 0 ? formatCurrencyFull(totalPnL / totalTrades) : '₹0'
+  const totalInvested = soldEntries.reduce((s, e) => s + e.qty * e.price, 0)
+  const returnPct = totalInvested > 0 ? (totalPnL / totalInvested * 100).toFixed(1) : 0
+
+  content.innerHTML = `
+    <div class="space-y-4">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="bg-gray-50 rounded-lg p-2.5">
+          <div class="text-gray-400">Total Realized P&amp;L</div>
+          <div class="font-semibold font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2.5">
+          <div class="text-gray-400">Return on Investment</div>
+          <div class="font-semibold ${returnPct >= 0 ? 'text-green-600' : 'text-red-600'}">${returnPct}%</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2.5">
+          <div class="text-gray-400">Win Rate</div>
+          <div class="font-semibold">${winRate}% <span class="font-normal text-gray-400">(${winCount}W / ${lossCount}L)</span></div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2.5">
+          <div class="text-gray-400">Avg Return / Trade</div>
+          <div class="font-semibold font-mono">${avgReturn}</div>
+        </div>
+      </div>
+
+      ${monthly.length > 0 ? `
+      <div>
+        <div class="text-xs font-medium text-gray-500 mb-2">Monthly Realized P&amp;L (Last 12 Months)</div>
+        <div class="h-44" id="monthly-chart"><canvas></canvas></div>
+      </div>
+      ` : ''}
+
+      ${yearly.length > 0 ? `
+      <div>
+        <div class="text-xs font-medium text-gray-500 mb-2">Yearly Realized P&amp;L</div>
+        <div class="h-44" id="yearly-chart"><canvas></canvas></div>
+      </div>
+      ` : ''}
+
+      ${soldEntries.length === 0 ? '<p class="text-xs text-gray-400 text-center py-4">No sold trades yet</p>' : ''}
+    </div>
+  `
+
+  requestAnimationFrame(() => {
+    if (monthly.length > 0) {
+      const canvas = document.querySelector('#monthly-chart canvas')
+      if (canvas) {
+        const colors = monthly.map(m => m.pnl >= 0 ? '#10b981' : '#ef4444')
+        new window.Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: monthly.map(m => getMonthLabel(m.ym)),
+            datasets: [{ label: 'P&L', data: monthly.map(m => m.pnl), backgroundColor: colors, borderRadius: 3 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => formatCurrencyFull(ctx.parsed.y) } } },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, callback: (v) => formatCurrency(v) } },
+            },
+          },
+        })
+      }
+    }
+    if (yearly.length > 0) {
+      const canvas = document.querySelector('#yearly-chart canvas')
+      if (canvas) {
+        const colors = yearly.map(y => y.pnl >= 0 ? '#6366f1' : '#ef4444')
+        new window.Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: yearly.map(y => y.year),
+            datasets: [{ label: 'P&L', data: yearly.map(y => y.pnl), backgroundColor: colors, borderRadius: 3 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => formatCurrencyFull(ctx.parsed.y) } } },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, callback: (v) => formatCurrency(v) } },
+            },
+          },
+        })
+      }
+    }
+  })
+}
+
+async function renderTargetsTab() {
+  const content = document.getElementById('analysis-content')
+  if (!content) return
+
+  const settings = await getSettings()
+  let monthlyTarget = settings.stockMonthlyTarget || 0
+  let yearlyTarget = settings.stockYearlyTarget || 0
+
+  const allEntries = await getAllStockEntries()
+  const { yearPnL, monthPnL } = calcTargetProgress(allEntries, yearlyTarget, monthlyTarget)
+  const monthPct = monthlyTarget > 0 ? Math.min(100, (monthPnL / monthlyTarget * 100)).toFixed(0) : 0
+  const yearPct = yearlyTarget > 0 ? Math.min(100, (yearPnL / yearlyTarget * 100)).toFixed(0) : 0
+
+  content.innerHTML = `
+    <div class="space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Monthly Target (₹)</label>
+          <input class="input text-xs" id="target-monthly" type="number" step="1000" value="${monthlyTarget || ''}" placeholder="0" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Yearly Target (₹)</label>
+          <input class="input text-xs" id="target-yearly" type="number" step="10000" value="${yearlyTarget || ''}" placeholder="0" />
+        </div>
+      </div>
+      <button class="btn-primary text-xs w-full py-1.5" id="save-targets-btn">Save Targets</button>
+
+      ${(monthlyTarget > 0 || yearlyTarget > 0) ? `
+      <hr class="border-gray-100">
+      <div class="space-y-3">
+        ${monthlyTarget > 0 ? `
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-gray-500">This Month</span>
+            <span class="font-mono font-semibold ${monthPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(monthPnL)} / ${formatCurrencyFull(monthlyTarget)}</span>
+          </div>
+          <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-500 ${monthPnL >= 0 ? 'bg-green-500' : 'bg-red-400'}" style="width:${monthPct}%"></div>
+          </div>
+          <div class="text-right text-[10px] text-gray-400 mt-0.5">${monthPct}% achieved</div>
+        </div>
+        ` : ''}
+        ${yearlyTarget > 0 ? `
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-gray-500">This Year</span>
+            <span class="font-mono font-semibold ${yearPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(yearPnL)} / ${formatCurrencyFull(yearlyTarget)}</span>
+          </div>
+          <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-500 ${yearPnL >= 0 ? 'bg-indigo-500' : 'bg-red-400'}" style="width:${yearPct}%"></div>
+          </div>
+          <div class="text-right text-[10px] text-gray-400 mt-0.5">${yearPct}% achieved</div>
+        </div>
+        ` : ''}
+      </div>
+      ` : '<p class="text-xs text-gray-400 text-center py-3">Set targets above to track progress</p>'}
+    </div>
+  `
+
+  document.getElementById('save-targets-btn').addEventListener('click', async () => {
+    const m = parseFloat(document.getElementById('target-monthly')?.value) || 0
+    const y = parseFloat(document.getElementById('target-yearly')?.value) || 0
+    const s = await getSettings()
+    s.stockMonthlyTarget = m
+    s.stockYearlyTarget = y
+    await saveSettings(s)
+    showToast('Targets saved')
+    await renderTargetsTab()
+  })
+}
+
+async function renderLiveTab() {
+  const content = document.getElementById('analysis-content')
+  if (!content) return
+
+  const allEntries = await getAllStockEntries()
+  const activeEntries = allEntries.filter(e => e.remainingQty > 0)
+  const activeSymbols = [...new Set(activeEntries.map(e => {
+    const stock = allStocks.find(s => s._id === e.stockId)
+    return stock ? stock.symbol : null
+  }).filter(Boolean))]
+
+  content.innerHTML = `
+    <div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-gray-400">Last updated: <span id="live-update-time">—</span></span>
+        <button class="btn-ghost text-xs px-2 py-1" id="refresh-live-btn"><ion-icon name="refresh-outline"></ion-icon> Refresh</button>
+      </div>
+      <div id="live-body" class="text-xs text-gray-400 text-center py-4">Fetching live prices...</div>
+    </div>
+  `
+
+  async function loadLivePrices() {
+    const body = document.getElementById('live-body')
+    if (!body) return
+
+    body.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">Fetching live prices...</div>'
+
+    const priceMap = activeSymbols.length > 0 ? await fetchPrices(activeSymbols) : {}
+    const updateTime = new Date().toLocaleTimeString()
+    const updateEl = document.getElementById('live-update-time')
+    if (updateEl) updateEl.textContent = updateTime
+
+    const rows = []
+    let totalCost = 0
+    let totalMarketValue = 0
+    let liveCount = 0
+
+    for (const stock of allStocks) {
+      const entries = activeEntries.filter(e => e.stockId === stock._id)
+      if (entries.length === 0) continue
+      const qty = entries.reduce((s, e) => s + e.remainingQty, 0)
+      const avgPrice = entries.reduce((s, e) => s + e.remainingQty * e.price, 0) / qty
+      const cost = qty * avgPrice
+      totalCost += cost
+
+      const ltp = priceMap[stock.symbol]
+      if (ltp != null) {
+        liveCount++
+        const mktVal = qty * ltp
+        totalMarketValue += mktVal
+        const pnl = mktVal - cost
+        const pnlPct = cost > 0 ? (pnl / cost * 100) : 0
+        rows.push({ symbol: stock.symbol, qty, avgPrice, cost, ltp, mktVal, pnl, pnlPct, hasLTP: true })
+      } else {
+        const days = Math.max(...entries.map(e => calcDaysHeld(e.date)))
+        const calcPrice = calcCurrentValue(avgPrice, entries[0].monthlyRate, entries[0].minReturn, days)
+        const calcVal = qty * calcPrice
+        totalMarketValue += calcVal
+        rows.push({ symbol: stock.symbol, qty, avgPrice, cost, ltp: null, mktVal: calcVal, pnl: null, pnlPct: 0, hasLTP: false })
+      }
+    }
+
+    const totalPnL = totalMarketValue - totalCost
+    const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost * 100) : 0
+
+    if (rows.length === 0) {
+      body.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No active holdings</p>'
+      return
+    }
+
+    body.innerHTML = `
+      <div class="grid grid-cols-3 gap-2 text-xs mb-3">
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">Invested</div>
+          <div class="font-semibold text-xs">${formatCurrencyFull(totalCost)}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">Market Value</div>
+          <div class="font-semibold text-xs">${formatCurrencyFull(totalMarketValue)}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">P&amp;L</div>
+          <div class="font-semibold text-xs font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)} (${totalPnLPct >= 0 ? '+' : ''}${totalPnLPct.toFixed(1)}%)</div>
+        </div>
+      </div>
+      ${liveCount > 0 ? `<div class="text-[10px] text-green-600 mb-2">✓ ${liveCount} of ${rows.length} stocks have live prices</div>` : activeSymbols.length > 0 ? `<div class="text-[10px] text-amber-600 mb-2">Live prices unavailable — showing calculated values</div>` : ''}
+      <table class="w-full text-xs">
+        <thead><tr class="text-gray-400 border-b border-gray-100">
+          <th class="text-left py-1 pr-1">Stock</th>
+          <th class="text-right py-1 pr-1">Qty</th>
+          <th class="text-right py-1 pr-1">Avg</th>
+          <th class="text-right py-1 pr-1">LTP</th>
+          <th class="text-right py-1">P&amp;L</th>
+        </tr></thead>
+        <tbody>${rows.map(r => {
+          const pnlClass = r.pnl != null ? (r.pnl >= 0 ? 'text-green-600' : 'text-red-600') : ''
+          const pnlStr = r.pnl != null ? `${formatCurrencyFull(r.pnl)} (${r.pnlPct >= 0 ? '+' : ''}${r.pnlPct.toFixed(1)}%)` : '-'
+          return `
+          <tr class="border-b border-gray-50">
+            <td class="py-1.5 pr-1 font-semibold">${escHtml(r.symbol)}${!r.hasLTP ? ' <span class="text-gray-300 text-[9px]">(calc)</span>' : ''}</td>
+            <td class="py-1.5 pr-1 text-right">${r.qty}</td>
+            <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.avgPrice)}</td>
+            <td class="py-1.5 pr-1 text-right font-mono">${r.ltp != null ? formatCurrencyFull(r.ltp) : '-'}</td>
+            <td class="py-1.5 text-right font-mono ${pnlClass}">${pnlStr}</td>
+          </tr>`
+        }).join('')}</tbody>
+      </table>
+    `
+  }
+
+  await loadLivePrices()
+
+  document.getElementById('refresh-live-btn').addEventListener('click', loadLivePrices)
 }
 
 async function showAddStockForm() {
