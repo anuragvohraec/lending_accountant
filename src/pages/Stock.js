@@ -856,31 +856,31 @@ async function renderReturnsTab() {
 
   content.innerHTML = `
     <div class="space-y-4">
-      <div class="grid grid-cols-2 gap-2 text-xs">
-        <div class="bg-gray-50 rounded-lg p-2.5">
+      <div class="grid grid-cols-2 gap-2 text-xs" id="metrics-grid">
+        <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="realized-pnl">
           <div class="text-gray-400">Total Realized P&amp;L</div>
           <div class="font-semibold font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)}</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-2.5">
+        <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="portfolio-return">
           <div class="text-gray-400">Portfolio Return</div>
           <div class="font-semibold ${portfolioPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${portfolioReturn}%</div>
           <div class="text-[9px] text-gray-400">Realized + Unrealized</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-2.5">
+        <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="annualized-return">
           <div class="text-gray-400">Annualized Return</div>
           <div class="font-semibold ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${annualizedReturn}%</div>
           <div class="text-[9px] text-gray-400">${avgHoldingDays > 0 ? Math.round(avgHoldingDays) + 'd avg hold' : '—'}</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-2.5">
+        <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="realized-roi">
           <div class="text-gray-400">Realized ROI</div>
           <div class="font-semibold ${returnPct >= 0 ? 'text-green-600' : 'text-red-600'}">${returnPct}%</div>
           <div class="text-[9px] text-gray-400">Simple (no time factor)</div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-2.5">
+        <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="win-rate">
           <div class="text-gray-400">Win Rate</div>
           <div class="font-semibold">${winRate}% <span class="font-normal text-gray-400">(${winCount}W / ${lossCount}L)</span></div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-2.5">
+        <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="avg-return">
           <div class="text-gray-400">Avg Return / Trade</div>
           <div class="font-semibold font-mono">${avgReturn}</div>
         </div>
@@ -947,6 +947,49 @@ async function renderReturnsTab() {
         })
       }
     }
+
+    document.querySelectorAll('[data-explain]').forEach(el => {
+      el.addEventListener('click', () => showMetricExplanation(el.dataset.explain))
+    })
+  })
+}
+
+function showMetricExplanation(key) {
+  const explanations = {
+    'realized-pnl': {
+      title: 'Total Realized P&L',
+      body: 'Sum of all profits and losses from closed (sold) trades.\n\nFormula:\nΣ (SoldPrice − BuyPrice) × Qty\nfor every stock entry where status = "sold".\n\nA positive number means you made money on your closed trades overall.',
+    },
+    'portfolio-return': {
+      title: 'Portfolio Return',
+      body: 'Total return on ALL capital deployed — both closed trades and current holdings.\n\nFormula:\n(Realized P&L + Unrealized P&L) / Total Cost Basis × 100\n\nRealized P&L: profits from sold trades\nUnrealized P&L: calculated gain on holdings still active\n  (CurrentValue − BuyPrice) × RemainingQty\n\nThis tells you how your entire portfolio is performing right now.',
+    },
+    'annualized-return': {
+      title: 'Annualized Return',
+      body: 'The simple return converted to a per-year rate, accounting for how long your money was invested.\n\nFormula:\n((1 + Total P&L / Total Invested) ^ (365 / Avg Holding Days) − 1) × 100\n\nAvg Holding Days = average days between buy and sell across all closed trades.\n\nExample: 7.7% return over 18 months = ~5.1% per year.\nThis lets you compare returns across different timeframes fairly.',
+    },
+    'realized-roi': {
+      title: 'Realized ROI (Simple)',
+      body: 'Raw percentage return on closed trades, ignoring time.\n\nFormula:\nTotal Realized P&L / Total Cost Basis × 100\n\nThis does NOT account for how long the money was invested.\nUse Annualized Return for a time-fair comparison.',
+    },
+    'win-rate': {
+      title: 'Win Rate',
+      body: 'Percentage of closed trades that were profitable.\n\nFormula:\n(Number of profitable trades / Total number of trades) × 100\n\nW = trades with P&L > 0\nL = trades with P&L < 0 (trades with exactly ₹0 are excluded)\n\nA high win rate alone doesn\'t guarantee profits — a few big wins can outweigh many small losses.',
+    },
+    'avg-return': {
+      title: 'Avg Return / Trade',
+      body: 'Average profit or loss per closed trade.\n\nFormula:\nTotal Realized P&L / Total number of closed trades\n\nThis gives a sense of whether your typical trade is worth the effort.\nIt smooths out the difference between big winners and small losers.',
+    },
+  }
+
+  const info = explanations[key]
+  if (!info) return
+
+  showModal({
+    title: info.title,
+    content: `<div class="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">${info.body}</div>`,
+    confirmText: 'Got it',
+    showCancel: false,
   })
 }
 
