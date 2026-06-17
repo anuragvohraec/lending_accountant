@@ -29,7 +29,13 @@ export async function startSync() {
   stopSync()
 
   const db = getDb()
-  const options = { live: true, retry: true }
+  const fetch = (url, opts) => {
+    opts.headers = opts.headers || new Headers()
+    opts.headers.set('bypass-tunnel-reminder', 'true')
+    return PouchDB.fetch(url, opts)
+  }
+
+  const options = { live: true, retry: true, fetch }
 
   if (settings.couchUsername && settings.couchPassword) {
     options.auth = { username: settings.couchUsername, password: settings.couchPassword }
