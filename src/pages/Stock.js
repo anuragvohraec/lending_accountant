@@ -1636,10 +1636,10 @@ async function showStockDetail(stockId) {
             return `
               <tr class="border-b border-gray-50">
                 <td class="py-1.5 pr-1">${e.remainingQty}</td>
-                <td class="py-1.5 pr-1">${formatCurrencyFull(e.price)}</td>
+                <td class="py-1.5 pr-1">${'₹' + Number(e.price).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
                 <td class="py-1.5 pr-1">${formatDate(e.date)}</td>
                 <td class="py-1.5 pr-1">${days}d</td>
-                <td class="py-1.5 text-right font-mono ${riskColor}">${formatCurrencyFull(cv)}</td>
+                <td class="py-1.5 text-right font-mono ${riskColor}">${(cv < 0 ? '-' : '') + '₹' + Math.abs(cv).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
               </tr>
               <tr class="border-b border-gray-100 text-[10px] text-gray-400">
                 <td class="pb-1.5 pt-0.5" colspan="5">
