@@ -247,6 +247,10 @@ async function showStockMenu() {
           <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="person-add-outline" class="text-primary text-lg"></ion-icon> Add Partner</span>
         </label>
         <label class="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 cursor-pointer">
+          <input type="radio" name="stock-action" value="trade-report" class="text-primary focus:ring-primary" />
+          <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="document-text-outline" class="text-primary text-lg"></ion-icon> Trade Report</span>
+        </label>
+        <label class="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 cursor-pointer">
           <input type="radio" name="stock-action" value="export" class="text-primary focus:ring-primary" />
           <span class="text-sm font-medium flex items-center gap-2"><ion-icon name="download-outline" class="text-primary text-lg"></ion-icon> Export CSV</span>
         </label>
@@ -270,6 +274,7 @@ async function showStockMenu() {
 
   if (choice === 'manage') await showPartnerManager()
   else if (choice === 'add') await addPartner()
+  else if (choice === 'trade-report') await showTradeReport()
   else if (choice === 'export') await exportStockCSV()
   else if (choice === 'import') await importStockCSV()
   else if (choice === 'delete-all') await deleteAllStockData()
@@ -323,6 +328,81 @@ function escCsv(val) {
     return '"' + s.replace(/"/g, '""') + '"'
   }
   return s
+}
+
+async function showTradeReport() {
+  const today = new Date()
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+  const defaultFrom = new Date(firstOfMonth)
+  defaultFrom.setMonth(defaultFrom.getMonth() - 2)
+
+  const content = `
+    <div class="space-y-3 text-sm">
+      <div>
+        <label class="input-label">From Date</label>
+        ${dateInputHTML({ id: 'tr-from', value: defaultFrom.toISOString().slice(0, 10) })}
+      </div>
+      <div>
+        <label class="input-label">To Date</label>
+        ${dateInputHTML({ id: 'tr-to', value: today.toISOString().slice(0, 10) })}
+      </div>
+    </div>
+  `
+
+  let result
+  const modalPromise = showModal({
+    title: 'Trade Report',
+    content,
+    confirmText: 'Generate CSV',
+    onMounted: () => {
+      setupDateInput('tr-from')
+      setupDateInput('tr-to')
+    },
+    onConfirm: () => {
+      const from = getDateInputValue('tr-from')
+      const to = getDateInputValue('tr-to')
+      if (!from || !to) { showToast('Please select both dates'); return false }
+      result = { from, to }
+    },
+  })
+
+  await modalPromise
+  if (!result) return
+
+  const entries = await getAllStockEntries()
+  const symbolMap = {}
+  for (const s of allStocks) symbolMap[s._id] = s.symbol
+
+  const { from: fromDate, to: toDate } = result
+
+  const rows = []
+  for (const e of entries) {
+    const name = symbolMap[e.stockId] || ''
+    const buyInRange = e.date >= fromDate && e.date <= toDate
+    const sellInRange = e.soldDate && e.soldDate >= fromDate && e.soldDate <= toDate
+    if (buyInRange) rows.push({ date: e.date, name, type: 'B', qty: e.qty, price: e.price })
+    if (sellInRange) rows.push({ date: e.soldDate, name, type: 'S', qty: e.qty, price: e.soldPrice })
+  }
+
+  if (rows.length === 0) {
+    showToast('No trades found in selected range')
+    return
+  }
+
+  rows.sort((a, b) => a.date.localeCompare(b.date))
+
+  const csv = 'Date,Name,Type,Qty,Price\n' + rows.map(r =>
+    [escCsv(r.date), escCsv(r.name), r.type, escCsv(r.qty), escCsv(r.price)].join(',')
+  ).join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `trade_report_${fromDate}_to_${toDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  showToast(`${filtered.length} trades exported`)
 }
 
 async function exportStockCSV() {
@@ -746,6 +826,63 @@ function calcXIRR(entries) {
   return (rate * 100).toFixed(1)
 }
 
+function calcMonthlyInterest(entries, monthlyRate) {
+  if (entries.length === 0) return { months: [], totalInterest: 0 }
+  const dailyRate = monthlyRate / 30 / 100
+  const events = []
+  for (const e of entries) {
+    if (e.status === 'sold' && e.soldDate) {
+      events.push({ date: new Date(e.date + 'T00:00:00'), amount: e.qty * e.price })
+      events.push({ date: new Date(e.soldDate + 'T00:00:00'), amount: -(e.qty * e.soldPrice) })
+    } else if (e.remainingQty > 0) {
+      events.push({ date: new Date(e.date + 'T00:00:00'), amount: e.remainingQty * e.price })
+    }
+  }
+  if (events.length === 0) return { months: [], totalInterest: 0 }
+  events.sort((a, b) => a.date - b.date)
+
+  const first = events[0].date
+  const last = events[events.length - 1].date
+  const hasActive = entries.some(e => e.remainingQty > 0)
+  const ref = hasActive ? new Date(Math.max(last.getTime(), Date.now())) : last
+  const startMonth = new Date(first.getFullYear(), first.getMonth(), 1)
+  const endMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 1)
+
+  const byMonth = {}
+  let outstanding = 0
+  let eventIdx = 0
+
+  for (let m = new Date(startMonth); m < endMonth; m.setMonth(m.getMonth() + 1)) {
+    const mk = m.getFullYear() + '-' + String(m.getMonth() + 1).padStart(2, '0')
+    const monthEnd = new Date(m.getFullYear(), m.getMonth() + 1, 1)
+    let prev = new Date(m)
+
+    while (eventIdx < events.length) {
+      const ev = events[eventIdx]
+      if (ev.date >= monthEnd) break
+      if (ev.date >= prev && outstanding > 0) {
+        const days = (ev.date - prev) / 86400000
+        if (days > 0) byMonth[mk] = (byMonth[mk] || 0) + outstanding * dailyRate * days
+      }
+      outstanding += ev.amount
+      prev = ev.date
+      eventIdx++
+    }
+
+    if (outstanding > 0) {
+      const monthLast = new Date(m.getFullYear(), m.getMonth() + 1, 0)
+      const days = Math.max(0, (monthLast - prev) / 86400000)
+      if (days > 0) byMonth[mk] = (byMonth[mk] || 0) + outstanding * dailyRate * days
+    }
+  }
+
+  const allMonths = Object.entries(byMonth)
+    .map(([ym, interest]) => ({ ym, interest: Math.round(interest) }))
+    .sort((a, b) => a.ym.localeCompare(b.ym))
+  const totalInterest = Object.values(byMonth).reduce((s, v) => s + v, 0)
+  return { allMonths, totalInterest: Math.round(totalInterest) }
+}
+
 function calcMonthlyPnL(entries) {
   const byMonth = {}
   for (const e of entries) {
@@ -793,6 +930,7 @@ async function renderAnalysisSection() {
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-primary text-white" data-tab="returns">Returns</button>
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="targets">Targets</button>
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="live">Live Prices</button>
+          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="interest">Interest</button>
         </div>
         <div id="analysis-content">
           <div class="text-xs text-gray-400 text-center py-4">Open to load analysis</div>
@@ -824,6 +962,7 @@ async function renderAnalysisSection() {
       if (tab === 'returns') await renderReturnsTab()
       else if (tab === 'targets') await renderTargetsTab()
       else if (tab === 'live') await renderLiveTab()
+      else if (tab === 'interest') await renderInterestTab()
     })
   })
 }
@@ -995,6 +1134,14 @@ function showMetricExplanation(key) {
     'avg-return': {
       title: 'Avg Return / Trade',
       body: 'Average profit or loss per closed trade.\n\nFormula:\nTotal Realized P&L / Total number of closed trades\n\nThis gives a sense of whether your typical trade is worth the effort.\nIt smooths out the difference between big winners and small losers.',
+    },
+    'interest-total': {
+      title: 'Total Interest Charged',
+      body: 'Hypothetical interest calculated on the capital deployed in each trade, as if you were charging the target monthly rate on the outstanding balance.\n\nHow it works:\n1. Every Buy adds to the outstanding balance (Debit)\n2. Every Sell reduces the outstanding balance (Credit)\n3. Interest = Outstanding × Days × (MonthlyRate / 30 / 100)\n4. Days = time between consecutive transactions\n5. For the last transaction in a month, interest runs to end of month\n\nThe monthly rate defaults to 2% if no target is set in the Targets tab.\n\nThis measures: "What would my returns be at the target rate?"',
+    },
+    'interest-excess': {
+      title: 'Excess Return',
+      body: 'Actual Total Realized P&L minus the hypothetical interest.\n\nFormula:\nTotal Realized P&L − Total Interest Charged\n\nIf positive (green): Your actual trading beat the target rate.\nIf negative (red): Your actual trading underperformed vs the target rate.\n\nThis is your "alpha" — the extra return you generated beyond what a simple interest-based return would have given you.',
     },
   }
 
@@ -1226,6 +1373,143 @@ async function renderLiveTab() {
   await loadLivePrices()
 
   document.getElementById('refresh-live-btn').addEventListener('click', loadLivePrices)
+}
+
+async function renderInterestTab() {
+  const content = document.getElementById('analysis-content')
+  if (!content) return
+
+  const settings = await getSettings()
+  const monthlyRate = parseFloat(settings.stockMonthlyTargetPct) || 2
+
+  const allEntries = await getAllStockEntries()
+  const soldEntries = allEntries.filter(e => e.soldDate && e.status === 'sold')
+  const totalRealizedPnL = soldEntries.reduce((s, e) => s + calcPnL(e), 0)
+
+  const { allMonths, totalInterest } = calcMonthlyInterest(allEntries, monthlyRate)
+
+  const diff = Math.round(totalRealizedPnL) - totalInterest
+  const diffPct = totalInterest > 0 ? ((diff / totalInterest) * 100).toFixed(1) : 0
+
+  const monthlyPnL = calcMonthlyPnL(allEntries)
+  const pnlByMonth = {}
+  for (const m of monthlyPnL) pnlByMonth[m.ym] = m.pnl
+
+  const years = [...new Set(allMonths.map(m => m.ym.slice(0, 4)))].sort()
+  const now = new Date()
+  const curYear = now.getFullYear()
+  let activeYear = years.includes(String(curYear)) ? curYear : Math.max(...years.map(Number))
+
+  function renderView(year) {
+    const yearMonths = allMonths.filter(m => m.ym.startsWith(String(year)))
+    const yearPnL = yearMonths.reduce((s, m) => s + Math.round(pnlByMonth[m.ym] || 0), 0)
+    const yearInt = yearMonths.reduce((s, m) => s + m.interest, 0)
+
+    content.innerHTML = `
+      <div class="space-y-4">
+        <div class="grid grid-cols-2 gap-2 text-xs" id="interest-metrics">
+          <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="interest-total">
+            <div class="text-gray-400">Total Interest Charged</div>
+            <div class="font-semibold font-mono text-indigo-600">${formatCurrencyFull(totalInterest)}</div>
+            <div class="text-[9px] text-gray-400">at ${monthlyRate}% per month</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2.5 cursor-pointer" data-explain="interest-excess">
+            <div class="text-gray-400">Excess Return</div>
+            <div class="font-semibold font-mono ${diff >= 0 ? 'text-green-600' : 'text-red-600'}">${diff >= 0 ? '+' : ''}${formatCurrencyFull(diff)}</div>
+            <div class="text-[9px] text-gray-400">Actual P&amp;L − Interest (${diffPct}%)</div>
+          </div>
+        </div>
+
+        ${soldEntries.length === 0 ? '<p class="text-xs text-gray-400 text-center py-4">No sold trades yet</p>' : `
+        <div class="flex items-center justify-center gap-2 text-xs">
+          <button class="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 font-medium year-nav-btn" data-year="${year - 1}" ${!years.includes(String(year - 1)) ? 'disabled style="opacity:0.3"' : ''}>&larr;</button>
+          <input type="number" class="w-16 text-center border rounded px-1 py-0.5 font-mono text-sm year-input" value="${year}" min="${years[0]}" max="${years[years.length - 1]}" />
+          <button class="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 font-medium year-nav-btn" data-year="${year + 1}" ${!years.includes(String(year + 1)) ? 'disabled style="opacity:0.3"' : ''}>&rarr;</button>
+        </div>
+
+        <div>
+          <div class="text-xs font-medium text-gray-500 mb-2">Monthly P&amp;L vs Interest (${year})</div>
+          <div class="h-48" id="interest-chart"><canvas></canvas></div>
+        </div>
+        <div class="text-xs text-gray-400">
+          <span class="inline-block w-3 h-3 rounded-sm bg-emerald-500 align-middle mr-1"></span> Actual P&amp;L
+          <span class="inline-block w-3 h-3 rounded-sm bg-indigo-400 align-middle mr-1 ml-3"></span> Interest at ${monthlyRate}%
+        </div>
+
+        <div class="text-xs space-y-1">
+          <div class="font-medium text-gray-500 mb-1">Month-wise Breakdown (${year})</div>
+          ${yearMonths.map(m => {
+            const pnl = Math.round(pnlByMonth[m.ym] || 0)
+            return '<div class="flex justify-between py-1 border-b border-gray-50">'
+              + '<span class="text-gray-500">' + getMonthLabel(m.ym) + '</span>'
+              + '<span class="font-mono ' + (pnl >= 0 ? 'text-green-600' : 'text-red-600') + '">' + formatCurrencyFull(pnl) + '</span>'
+              + '<span class="font-mono text-indigo-500">' + formatCurrencyFull(m.interest) + '</span>'
+              + '</div>'
+          }).join('')}
+          <div class="flex justify-between py-1 font-medium border-t border-gray-300">
+            <span class="text-gray-700">Total</span>
+            <span class="font-mono ${yearPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(yearPnL)}</span>
+            <span class="font-mono text-indigo-600">${formatCurrencyFull(yearInt)}</span>
+          </div>
+        </div>
+        `}
+      </div>
+    `
+
+    if (yearMonths.length > 0) {
+      requestAnimationFrame(() => {
+        const canvas = document.querySelector('#interest-chart canvas')
+        if (!canvas) return
+        const labels = yearMonths.map(m => getMonthLabel(m.ym))
+        const pnlData = yearMonths.map(m => Math.round(pnlByMonth[m.ym] || 0))
+        const intData = yearMonths.map(m => m.interest)
+        new window.Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { label: 'P&L', data: pnlData, backgroundColor: '#10b981', borderRadius: 3 },
+              { label: 'Interest', data: intData, backgroundColor: '#818cf8', borderRadius: 3 },
+            ],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => ctx.dataset.label + ': ' + formatCurrencyFull(ctx.parsed.y),
+                },
+              },
+            },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, callback: (v) => formatCurrency(v) } },
+            },
+          },
+        })
+      })
+    }
+
+    document.querySelectorAll('[data-explain]').forEach(el => {
+      el.addEventListener('click', () => showMetricExplanation(el.dataset.explain))
+    })
+    document.querySelectorAll('.year-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!btn.disabled) { activeYear = parseInt(btn.dataset.year); renderView(activeYear) }
+      })
+    })
+    document.querySelector('.year-input')?.addEventListener('change', function () {
+      const y = parseInt(this.value)
+      if (!isNaN(y) && y >= parseInt(this.min) && y <= parseInt(this.max)) {
+        activeYear = y; renderView(activeYear)
+      } else {
+        this.value = activeYear
+      }
+    })
+  }
+
+  renderView(activeYear)
 }
 
 async function showAddStockForm() {
