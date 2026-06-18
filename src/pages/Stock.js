@@ -92,6 +92,8 @@ async function renderStockList() {
   let totalQtyAll = 0
   let realizedPnL = 0
   let unrealizedPnL = 0
+  let totalMarketValue = 0
+  let liveCount = 0
   const partnerPnL = {}
 
   for (const s of allStocks) {
@@ -105,6 +107,11 @@ async function renderStockList() {
       totalInvested += totalQty * avgPrice
       totalDays += totalQty * avgDays
       totalQtyAll += totalQty
+      const ltp = getCachedPrice(s.symbol)
+      if (ltp != null) {
+        totalMarketValue += totalQty * ltp
+        liveCount++
+      }
     }
 
     for (const e of entries) {
@@ -124,6 +131,9 @@ async function renderStockList() {
     }
   }
 
+  const totalPnL = totalMarketValue > 0 ? totalMarketValue - totalInvested : 0
+  const totalPnLPct = totalInvested > 0 ? (totalPnL / totalInvested * 100) : 0
+
   function stockCardHtml(s) {
     const entries = entriesByStock[s._id] || []
     const activeEntries = entries.filter(e => e.remainingQty > 0)
@@ -132,10 +142,11 @@ async function renderStockList() {
     const avgDays = calcAvgDays(activeEntries)
     const avgValue = calcAggregatedCurrentValue(activeEntries)
     const ltp = getCachedPrice(s.symbol)
+    const pnlPct = ltp != null && avgValue > 0 ? ((ltp - avgValue) / avgValue * 100) : null
     return `
-      <div class="card stock-card !p-3" data-id="${s._id}">
+      <div class="card stock-card !p-3 ${s.status === 'inactive' ? 'bg-gray-100' : ''}" data-id="${s._id}">
         <div class="flex items-center justify-between mb-1">
-          <span class="font-bold text-sm">${escHtml(s.symbol)}</span>
+          <span class="font-bold text-sm">${escHtml(s.symbol)} <span class="text-[11px] font-normal text-gray-400">(Q: ${totalQty} | D: ${avgDays > 0 ? Math.round(avgDays) : '-'})</span></span>
           <div class="flex items-center gap-1.5">
             ${totalQty > 0 ? `
               <button class="w-7 h-7 rounded-lg bg-primary text-white text-xs font-bold flex items-center justify-center stock-buy shadow-sm" data-id="${s._id}">B</button>
@@ -143,20 +154,17 @@ async function renderStockList() {
             ` : `
               <button class="w-7 h-7 rounded-lg bg-primary text-white text-xs font-bold flex items-center justify-center stock-buy shadow-sm" data-id="${s._id}">B</button>
             `}
-            <span class="text-[10px] px-1.5 py-0.5 rounded-full ${s.status === 'inactive' ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}">${s.status === 'inactive' ? 'Ina' : 'Act'}</span>
           </div>
         </div>
         <div class="flex items-center justify-between text-[11px] ${totalQty === 0 ? 'text-gray-400' : ''}">
           <div class="flex items-center gap-2">
-            <span><span class="text-gray-400">Q</span> <span class="font-semibold">${totalQty}</span></span>
-            <span class="text-gray-200">|</span>
-            <span><span class="text-gray-400">D</span> <span class="font-semibold">${avgDays > 0 ? Math.round(avgDays) : '-'}</span></span>
-            <span class="text-gray-200">|</span>
             <span><span class="text-gray-400">P</span> <span class="font-semibold">${avgPrice > 0 ? formatCurrencyFull(avgPrice) : '-'}</span></span>
             <span class="text-gray-200">|</span>
             <span><span class="text-gray-400">V</span> <span class="font-semibold">${avgValue > 0 ? formatCurrencyFull(avgValue) : '-'}</span></span>
-            ${ltp != null ? `<span class="text-gray-200">|</span>
-            <span><span class="text-gray-400">LTP</span> <span class="font-semibold">${formatCurrencyFull(ltp)}</span></span>` : ''}
+            <span class="text-gray-200">|</span>
+            <span><span class="text-gray-400">LTP</span> <span class="font-semibold">${ltp != null ? formatCurrencyFull(ltp) : '-'}</span></span>
+            <span class="text-gray-200">|</span>
+            <span><span class="text-gray-400">P&amp;L</span> <span class="font-semibold font-mono ${pnlPct != null ? (pnlPct >= 0 ? 'text-green-600' : 'text-red-600') : ''}">${pnlPct != null ? (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(1) + '%' : '-'}</span></span>
           </div>
           <div class="strategy-info flex items-center gap-1 text-[10px]" data-id="${s._id}">
             <span class="text-gray-400">NA</span>
@@ -199,6 +207,19 @@ async function renderStockList() {
           <div>
             <div class="stat-label">Avg Hold Days</div>
             <div class="stat-value text-sm">${totalQtyAll > 0 ? Math.round(totalDays / totalQtyAll) + 'd' : '-'}</div>
+          </div>
+          <div>
+            <div class="stat-label">Market Value</div>
+            <div class="stat-value text-sm flex items-center justify-center gap-1">
+              <span>${liveCount > 0 ? formatCurrencyFull(totalMarketValue) : 'NA'}</span>
+              <button class="stock-refresh-prices inline-flex items-center justify-center text-xs px-1.5 py-0.5 rounded-full ${liveCount > 0 ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-primary text-white'}" title="${liveCount > 0 ? 'Refresh live prices' : 'Pull live prices'}">
+                <ion-icon name="${liveCount > 0 ? 'refresh-outline' : 'download-outline'}" class="text-sm"></ion-icon>
+              </button>
+            </div>
+          </div>
+          <div>
+            <div class="stat-label">P&amp;L</div>
+            <div class="stat-value text-sm font-mono ${liveCount > 0 ? (totalPnL >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}">${liveCount > 0 ? `${formatCurrencyFull(totalPnL)} (${totalPnLPct >= 0 ? '+' : ''}${totalPnLPct.toFixed(1)}%)` : 'NA'}</div>
           </div>
           ${realizedPnL !== 0 || unrealizedPnL !== 0 ? `
           <div>
@@ -263,6 +284,21 @@ async function renderStockList() {
         })
       })
     })
+
+  const refreshBtn = summaryEl ? summaryEl.querySelector('.stock-refresh-prices') : null
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      refreshBtn.disabled = true
+      refreshBtn.innerHTML = '<ion-icon name="sync-outline" class="text-sm animate-spin"></ion-icon>'
+      const symbols = [...new Set(allStocks.flatMap(s => {
+        const entries = entriesByStock[s._id] || []
+        return entries.some(e => e.remainingQty > 0) ? [s.symbol] : []
+      }))]
+      if (symbols.length > 0) await fetchPrices(symbols)
+      renderStockList()
+    })
+  }
 
   renderParetoAnalysis(entriesByStock)
 }
@@ -963,7 +999,6 @@ async function renderAnalysisSection() {
         <div class="flex gap-2 mb-3">
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-primary text-white" data-tab="returns">Returns</button>
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="targets">Targets</button>
-          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="live">Live Prices</button>
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="interest">Interest</button>
         </div>
         <div id="analysis-content">
@@ -995,7 +1030,6 @@ async function renderAnalysisSection() {
       const tab = btn.dataset.tab
       if (tab === 'returns') await renderReturnsTab()
       else if (tab === 'targets') await renderTargetsTab()
-      else if (tab === 'live') await renderLiveTab()
       else if (tab === 'interest') await renderInterestTab()
     })
   })
@@ -1277,137 +1311,7 @@ async function renderTargetsTab() {
   })
 }
 
-async function renderLiveTab() {
-  const content = document.getElementById('analysis-content')
-  if (!content) return
 
-  const allEntries = await getAllStockEntries()
-  const activeEntries = allEntries.filter(e => e.remainingQty > 0)
-  const activeSymbols = [...new Set(activeEntries.map(e => {
-    const stock = allStocks.find(s => s._id === e.stockId)
-    return stock ? stock.symbol : null
-  }).filter(Boolean))]
-
-    content.innerHTML = `
-    <div class="space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-400">Last updated: <span id="live-update-time">—</span></span>
-        <button class="btn-ghost text-xs px-2 py-1" id="refresh-live-btn"><ion-icon name="refresh-outline"></ion-icon> Refresh</button>
-      </div>
-      <div id="live-source-info" class="text-[9px] text-gray-400 hidden"></div>
-      <div id="live-body" class="text-xs text-gray-400 text-center py-4">Fetching live prices...</div>
-    </div>
-  `
-
-  async function loadLivePrices() {
-    const body = document.getElementById('live-body')
-    if (!body) return
-
-    body.innerHTML = '<div class="text-xs text-gray-400 text-center py-4">Fetching live prices...</div>'
-
-    const priceMap = activeSymbols.length > 0 ? await fetchPrices(activeSymbols) : {}
-    const updateTime = new Date().toLocaleTimeString()
-    const updateEl = document.getElementById('live-update-time')
-    if (updateEl) updateEl.textContent = updateTime
-
-    const srcInfo = getLastSourceInfo()
-    const srcEl = document.getElementById('live-source-info')
-    if (srcEl) {
-      if (srcInfo.source) {
-        srcEl.textContent = `Source: ${srcInfo.source}`
-        srcEl.className = 'text-[9px] text-green-600'
-        srcEl.classList.remove('hidden')
-      } else if (srcInfo.error) {
-        srcEl.textContent = srcInfo.error
-        srcEl.className = 'text-[9px] text-amber-600'
-        srcEl.classList.remove('hidden')
-      } else {
-        srcEl.classList.add('hidden')
-      }
-    }
-
-    const rows = []
-    let totalCost = 0
-    let totalMarketValue = 0
-    let liveCount = 0
-
-    for (const stock of allStocks) {
-      const entries = activeEntries.filter(e => e.stockId === stock._id)
-      if (entries.length === 0) continue
-      const qty = entries.reduce((s, e) => s + e.remainingQty, 0)
-      const avgPrice = entries.reduce((s, e) => s + e.remainingQty * e.price, 0) / qty
-      const cost = qty * avgPrice
-      totalCost += cost
-
-      const ltp = priceMap[stock.symbol]
-      if (ltp != null) {
-        liveCount++
-        const mktVal = qty * ltp
-        totalMarketValue += mktVal
-        const pnl = mktVal - cost
-        const pnlPct = cost > 0 ? (pnl / cost * 100) : 0
-        rows.push({ symbol: stock.symbol, qty, avgPrice, cost, ltp, mktVal, pnl, pnlPct, hasLTP: true })
-      } else {
-        const days = Math.max(...entries.map(e => calcDaysHeld(e.date)))
-        const calcPrice = calcCurrentValue(avgPrice, entries[0].monthlyRate, entries[0].minReturn, days)
-        const calcVal = qty * calcPrice
-        totalMarketValue += calcVal
-        rows.push({ symbol: stock.symbol, qty, avgPrice, cost, ltp: null, mktVal: calcVal, pnl: null, pnlPct: 0, hasLTP: false })
-      }
-    }
-
-    const totalPnL = totalMarketValue - totalCost
-    const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost * 100) : 0
-
-    if (rows.length === 0) {
-      body.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No active holdings</p>'
-      return
-    }
-
-    body.innerHTML = `
-      <div class="grid grid-cols-3 gap-2 text-xs mb-3">
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Invested</div>
-          <div class="font-semibold text-xs">${formatCurrencyFull(totalCost)}</div>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Market Value</div>
-          <div class="font-semibold text-xs">${formatCurrencyFull(totalMarketValue)}</div>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">P&amp;L</div>
-          <div class="font-semibold text-xs font-mono ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">${formatCurrencyFull(totalPnL)} (${totalPnLPct >= 0 ? '+' : ''}${totalPnLPct.toFixed(1)}%)</div>
-        </div>
-      </div>
-      ${liveCount > 0 ? `<div class="text-[10px] text-green-600 mb-2">✓ ${liveCount} of ${rows.length} stocks have live prices</div>` : activeSymbols.length > 0 ? `<div class="text-[10px] text-amber-600 mb-2">Live prices unavailable — showing calculated values</div>` : ''}
-      <table class="w-full text-xs">
-        <thead><tr class="text-gray-400 border-b border-gray-100">
-          <th class="text-left py-1 pr-1">Stock</th>
-          <th class="text-right py-1 pr-1">Qty</th>
-          <th class="text-right py-1 pr-1">Avg</th>
-          <th class="text-right py-1 pr-1">LTP</th>
-          <th class="text-right py-1">P&amp;L</th>
-        </tr></thead>
-        <tbody>${rows.map(r => {
-          const pnlClass = r.pnl != null ? (r.pnl >= 0 ? 'text-green-600' : 'text-red-600') : ''
-          const pnlStr = r.pnl != null ? `${formatCurrencyFull(r.pnl)} (${r.pnlPct >= 0 ? '+' : ''}${r.pnlPct.toFixed(1)}%)` : '-'
-          return `
-          <tr class="border-b border-gray-50">
-            <td class="py-1.5 pr-1 font-semibold">${escHtml(r.symbol)}${!r.hasLTP ? ' <span class="text-gray-300 text-[9px]">(calc)</span>' : ''}</td>
-            <td class="py-1.5 pr-1 text-right">${r.qty}</td>
-            <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.avgPrice)}</td>
-            <td class="py-1.5 pr-1 text-right font-mono">${r.ltp != null ? formatCurrencyFull(r.ltp) : '-'}</td>
-            <td class="py-1.5 text-right font-mono ${pnlClass}">${pnlStr}</td>
-          </tr>`
-        }).join('')}</tbody>
-      </table>
-    `
-  }
-
-  await loadLivePrices()
-
-  document.getElementById('refresh-live-btn').addEventListener('click', loadLivePrices)
-}
 
 async function renderInterestTab() {
   const content = document.getElementById('analysis-content')
