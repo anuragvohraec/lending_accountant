@@ -9,6 +9,7 @@ import { showSkeleton } from '../components/Loading.js'
 import { logAction } from '../services/audit.js'
 import { fetchPrices, getCachedPrice, isStale, getLastSourceInfo } from '../services/stockPrice.js'
 import { calcDaysHeld, calcCurrentValue, calcV1, calcV2, calcAvgBuyPrice, calcAvgDays, calcTotalQty, calcAggregatedCurrentValue, sellLIFO } from '../services/stockCalc.js'
+import { calc1234Lots, computeExistingHoldings, getStrategies, getStrategy, saveStrategy, deleteStrategy, computeStockSoldMetrics } from '../services/stockStrategy.js'
 import { escHtml } from '../utils/helpers.js'
 
 let allPartners = []
@@ -130,9 +131,10 @@ async function renderStockList() {
     const avgPrice = calcAvgBuyPrice(activeEntries)
     const avgDays = calcAvgDays(activeEntries)
     const avgValue = calcAggregatedCurrentValue(activeEntries)
+    const ltp = getCachedPrice(s.symbol)
     return `
       <div class="card stock-card !p-3" data-id="${s._id}">
-        <div class="flex items-center justify-between mb-1.5">
+        <div class="flex items-center justify-between mb-1">
           <span class="font-bold text-sm">${escHtml(s.symbol)}</span>
           <div class="flex items-center gap-1.5">
             ${totalQty > 0 ? `
@@ -144,14 +146,22 @@ async function renderStockList() {
             <span class="text-[10px] px-1.5 py-0.5 rounded-full ${s.status === 'inactive' ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}">${s.status === 'inactive' ? 'Ina' : 'Act'}</span>
           </div>
         </div>
-        <div class="flex items-center gap-2 text-[11px] ${totalQty === 0 ? 'text-gray-400' : ''}">
-          <span><span class="text-gray-400">Q</span> <span class="font-semibold">${totalQty}</span></span>
-          <span class="text-gray-200">|</span>
-          <span><span class="text-gray-400">D</span> <span class="font-semibold">${avgDays > 0 ? Math.round(avgDays) : '-'}</span></span>
-          <span class="text-gray-200">|</span>
-          <span><span class="text-gray-400">P</span> <span class="font-semibold">${avgPrice > 0 ? formatCurrencyFull(avgPrice) : '-'}</span></span>
-          <span class="text-gray-200">|</span>
-          <span><span class="text-gray-400">V</span> <span class="font-semibold">${avgValue > 0 ? formatCurrencyFull(avgValue) : '-'}</span></span>
+        <div class="flex items-center justify-between text-[11px] ${totalQty === 0 ? 'text-gray-400' : ''}">
+          <div class="flex items-center gap-2">
+            <span><span class="text-gray-400">Q</span> <span class="font-semibold">${totalQty}</span></span>
+            <span class="text-gray-200">|</span>
+            <span><span class="text-gray-400">D</span> <span class="font-semibold">${avgDays > 0 ? Math.round(avgDays) : '-'}</span></span>
+            <span class="text-gray-200">|</span>
+            <span><span class="text-gray-400">P</span> <span class="font-semibold">${avgPrice > 0 ? formatCurrencyFull(avgPrice) : '-'}</span></span>
+            <span class="text-gray-200">|</span>
+            <span><span class="text-gray-400">V</span> <span class="font-semibold">${avgValue > 0 ? formatCurrencyFull(avgValue) : '-'}</span></span>
+            ${ltp != null ? `<span class="text-gray-200">|</span>
+            <span><span class="text-gray-400">LTP</span> <span class="font-semibold">${formatCurrencyFull(ltp)}</span></span>` : ''}
+          </div>
+          <div class="strategy-info flex items-center gap-1 text-[10px]" data-id="${s._id}">
+            <span class="text-gray-400">NA</span>
+            <button class="strategy-add text-amber-500 font-bold text-xs leading-none hover:text-amber-700" data-id="${s._id}" title="Create Strategy">+</button>
+          </div>
         </div>
       </div>
     `
@@ -213,7 +223,7 @@ async function renderStockList() {
 
     el.querySelectorAll('.stock-card').forEach(card => {
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.stock-buy') || e.target.closest('.stock-sell')) return
+        if (e.target.closest('.stock-buy') || e.target.closest('.stock-sell') || e.target.closest('.strategy-link') || e.target.closest('.strategy-add')) return
         showStockDetail(card.dataset.id)
       })
     })
@@ -227,6 +237,30 @@ async function renderStockList() {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         showSellForm(btn.dataset.id)
+      })
+    })
+
+    getStrategies().then(strats => {
+      for (const s of strats) {
+        const info = el.querySelector(`.strategy-info[data-id="${s.stockId}"]`)
+        if (!info) continue
+        const label = escHtml(s.label || 'Strategy')
+        info.innerHTML = `
+          <span class="strategy-link text-amber-600 cursor-pointer hover:underline" data-strategy="${s._id}">${label}</span>
+          <button class="strategy-add text-amber-500 font-bold text-xs leading-none hover:text-amber-700" data-id="${s.stockId}" title="Manage Strategy">+</button>
+        `
+      }
+      el.querySelectorAll('.strategy-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+          e.stopPropagation()
+          showStrategyDetail(link.dataset.strategy)
+        })
+      })
+      el.querySelectorAll('.strategy-add').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          showStrategyForStock(btn.dataset.id)
+        })
       })
     })
 
@@ -1570,6 +1604,283 @@ async function showAddStockForm() {
   renderStockList()
 }
 
+async function showStrategyForStock(stockId) {
+  const stock = allStocks.find(s => s._id === stockId)
+  if (!stock) return
+  showCreateStrategy(stockId)
+}
+
+async function showCreateStrategy(stockId) {
+  const stock = allStocks.find(s => s._id === stockId)
+  if (!stock) return
+  const entries = await getStockEntries(stockId)
+  const soldEntries = entries.filter(e => e.status === 'sold' && e.soldDate)
+  const activeEntries = entries.filter(e => e.remainingQty > 0)
+  const { SQ, ASP } = computeStockSoldMetrics(entries)
+  if (SQ === 0) { showToast('No sold trades found for this stock'); return }
+
+  const defaultMBP = Math.round(ASP * 100) / 100
+  let params = { SQ, ASP, MBP: defaultMBP, buybackRatio: 2/3, targetAvgFactor: 0.9, granularity: 1, type: '1234' }
+  let label = stock.symbol + '_1234'
+
+  function renderPreview() {
+    const r = calc1234Lots(params)
+    const existing = computeExistingHoldings(r.lots, activeEntries)
+    const totalExisting = existing.reduce((s, l) => s + l.existing, 0)
+    const overlapCost = existing.reduce((s, l) => s + l.existing * l.price, 0)
+    const newCapital = r.totalCost - overlapCost
+    return `
+      <div class="border-t border-gray-200 pt-3 mt-2">
+        <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Total Investment</div>
+            <div class="font-semibold font-mono text-gray-800">${formatCurrencyFull(r.totalCost)}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Target Avg Price</div>
+            <div class="font-semibold font-mono text-indigo-600">${formatCurrencyFull(r.avgPrice)}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Range</div>
+            <div class="font-semibold font-mono text-gray-800">${r.rangeHigh} – ${r.rangeLow}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Lots</div>
+            <div class="font-semibold font-mono text-gray-800">${r.lots.length}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Existing Overlap</div>
+            <div class="font-semibold font-mono text-amber-600">${totalExisting} units</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">New Capital Needed</div>
+            <div class="font-semibold font-mono text-green-600">${formatCurrencyFull(Math.max(0, newCapital))}</div>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="text-gray-400 border-b border-gray-100">
+              <th class="text-left py-1 pr-1">Qty</th>
+              <th class="text-right py-1 pr-1">Price</th>
+              <th class="text-right py-1 pr-1">Existing</th>
+              <th class="text-right py-1">Subtotal</th>
+            </tr></thead>
+            <tbody>${existing.map(l => {
+              const subtotal = l.qty * l.price
+              const highlight = l.existing > 0 ? 'bg-amber-50' : ''
+              return `<tr class="border-b border-gray-50 ${highlight}">
+                <td class="py-1 pr-1">${l.qty}</td>
+                <td class="py-1 pr-1 text-right font-mono">${l.price.toFixed(1)}</td>
+                <td class="py-1 pr-1 text-right font-mono ${l.existing > 0 ? 'text-amber-600 font-semibold' : ''}">${l.existing}</td>
+                <td class="py-1 text-right font-mono">${formatCurrencyFull(subtotal)}</td>
+              </tr>`
+            }).join('')}</tbody>
+            <tfoot><tr class="font-medium">
+              <td class="py-1 pr-1 border-t-2 border-gray-400">${r.totalQty}</td>
+              <td class="py-1 pr-1 text-right font-mono border-t-2 border-gray-400">${r.avgPrice.toFixed(1)}</td>
+              <td class="py-1 pr-1 text-right font-mono text-amber-600 border-t-2 border-gray-400">${totalExisting}</td>
+              <td class="py-1 text-right font-mono border-t-2 border-gray-400">${formatCurrencyFull(r.totalCost)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+        ${totalExisting > 0 ? `<div class="text-[10px] text-amber-600 mt-1">⚠ ${totalExisting} units already held in these price brackets. Overlap cost ~${formatCurrencyFull(overlapCost)}.</div>` : ''}
+      </div>
+    `
+  }
+
+  function renderGranBtns() {
+    return [1,2,3,4,5].map(g =>
+      `<button class="flex-1 text-xs py-1.5 rounded-lg font-medium gran-btn ${g === params.granularity ? 'bg-primary text-white' : 'bg-gray-100'}" data-val="${g}">${g}</button>`
+    ).join('')
+  }
+  function updatePreview() {
+    const granEl = document.getElementById('gran-btns')
+    if (granEl) granEl.innerHTML = renderGranBtns()
+    const previewEl = document.getElementById('strategy-preview')
+    if (previewEl) previewEl.innerHTML = renderPreview()
+  }
+
+  const content = `
+    <div class="space-y-3 text-sm strategy-creator">
+      <div>
+        <label class="input-label">Strategy Type</label>
+        <select class="input" id="strategy-type">
+          <option value="1234" selected>1234 Strategy</option>
+        </select>
+      </div>
+      <div>
+        <label class="input-label">Label</label>
+        <input class="input" id="strategy-label" value="${escHtml(label)}" />
+      </div>
+      <div>
+        <label class="input-label">Max Buy Price (MBP)</label>
+        <input type="number" step="0.01" class="input" id="strategy-mbp" value="${params.MBP}" />
+      </div>
+      <div>
+        <label class="input-label">Buy-back Ratio <span id="buyback-val" class="text-primary">${Math.round(params.buybackRatio * 100)}%</span></label>
+        <input type="range" min="0" max="1" step="0.01" class="w-full" id="strategy-buyback" value="${params.buybackRatio}" />
+        <div class="flex gap-2 mt-1">
+          <button class="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 quick-ratio" data-val="0.5">50%</button>
+          <button class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 font-medium quick-ratio" data-val="0.666">66.6%</button>
+        </div>
+      </div>
+      <div>
+        <label class="input-label">Target Avg Factor <span id="avgf-val" class="text-primary">${params.targetAvgFactor.toFixed(2)}</span></label>
+        <input type="range" min="0.5" max="1" step="0.01" class="w-full" id="strategy-avgf" value="${params.targetAvgFactor}" />
+      </div>
+      <div>
+        <label class="input-label">Granularity <span id="gran-val" class="text-primary">Level ${params.granularity}</span></label>
+        <div class="flex gap-1" id="gran-btns">
+          ${renderGranBtns()}
+        </div>
+      </div>
+      <div id="strategy-preview">${renderPreview()}</div>
+    </div>
+  `
+
+  const modalPromise = showModal({
+    title: 'Create Strategy — ' + escHtml(stock.symbol),
+    content,
+    confirmText: 'Save Strategy',
+    onMounted: () => {
+      document.getElementById('strategy-type')?.addEventListener('change', function () {
+        params.type = this.value; updatePreview()
+      })
+      document.getElementById('strategy-label')?.addEventListener('input', function () {
+        label = this.value
+      })
+      document.getElementById('strategy-mbp')?.addEventListener('input', function () {
+        params.MBP = parseFloat(this.value) || 0; updatePreview()
+      })
+      document.getElementById('strategy-buyback')?.addEventListener('input', function () {
+        params.buybackRatio = parseFloat(this.value)
+        document.getElementById('buyback-val').textContent = Math.round(params.buybackRatio * 100) + '%'
+        updatePreview()
+      })
+      document.getElementById('strategy-avgf')?.addEventListener('input', function () {
+        params.targetAvgFactor = parseFloat(this.value)
+        document.getElementById('avgf-val').textContent = params.targetAvgFactor.toFixed(2)
+        updatePreview()
+      })
+      document.querySelectorAll('.quick-ratio').forEach(btn => {
+        btn.addEventListener('click', function () {
+          params.buybackRatio = parseFloat(this.dataset.val)
+          document.getElementById('strategy-buyback').value = params.buybackRatio
+          document.getElementById('buyback-val').textContent = Math.round(params.buybackRatio * 100) + '%'
+          updatePreview()
+        })
+      })
+      document.getElementById('gran-btns').addEventListener('click', function (e) {
+        const btn = e.target.closest('.gran-btn')
+        if (!btn) return
+        params.granularity = parseInt(btn.dataset.val)
+        document.getElementById('gran-val').textContent = 'Level ' + params.granularity
+        updatePreview()
+      })
+    },
+    onConfirm: () => {
+      const lbl = (document.getElementById('strategy-label')?.value || '').trim()
+      if (!lbl) { showToast('Please enter a label'); return false }
+      if (params.MBP <= 0) { showToast('Please enter a valid Max Buy Price'); return false }
+      if (params.MBP <= params.ASP * params.targetAvgFactor) { showToast('MBP must be greater than target avg price'); return false }
+      return { label: lbl, params: { ...params } }
+    },
+  })
+
+  const result = await modalPromise
+  if (!result) return
+
+  const r2 = calc1234Lots(result.params)
+  const existing = computeExistingHoldings(r2.lots, activeEntries)
+  await saveStrategy({
+    stockId,
+    label: result.label,
+    type: result.params.type,
+    params: result.params,
+    lots: existing,
+    totalQty: r2.totalQty,
+    totalCost: r2.totalCost,
+    avgPrice: r2.avgPrice,
+    SQ,
+    ASP,
+    status: 'active',
+  })
+  showToast('Strategy saved')
+  renderStockList()
+}
+
+async function showStrategyDetail(strategyId) {
+  const strategy = await getStrategy(strategyId)
+  if (!strategy) return
+  const stock = allStocks.find(s => s._id === strategy.stockId)
+  const filled = Object.keys(strategy.filledLots || {}).length
+  const total = (strategy.lots || []).length
+
+  const content = `
+    <div class="space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">Type</div>
+          <div class="font-semibold">${strategy.type || '1234'}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">Status</div>
+          <div class="font-semibold text-green-600">${strategy.status}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">Total Investment</div>
+          <div class="font-semibold font-mono">${formatCurrencyFull(strategy.totalCost)}</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-gray-400">Target Avg</div>
+          <div class="font-semibold font-mono text-indigo-600">${strategy.avgPrice.toFixed(1)}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-1 text-xs">
+        <span class="text-gray-400">Progress:</span>
+        <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full bg-amber-500 rounded-full transition-all" style="width:${total > 0 ? (filled / total * 100) : 0}%"></div>
+        </div>
+        <span class="font-mono text-amber-600">${filled}/${total}</span>
+      </div>
+      <div class="overflow-x-auto max-h-64 overflow-y-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-400 border-b border-gray-100">
+            <th class="text-left py-1 pr-1">Qty</th>
+            <th class="text-right py-1 pr-1">Price</th>
+            <th class="text-right py-1 pr-1">Existing</th>
+            <th class="text-right py-1">Status</th>
+          </tr></thead>
+          <tbody>${(strategy.lots || []).map((l, i) => {
+            const isFilled = strategy.filledLots && strategy.filledLots[i]
+            return `<tr class="border-b border-gray-50 ${isFilled ? 'text-gray-400' : ''}">
+              <td class="py-1 pr-1">${l.qty}</td>
+              <td class="py-1 pr-1 text-right font-mono">${l.price.toFixed(1)}</td>
+              <td class="py-1 pr-1 text-right font-mono ${l.existing > 0 ? 'text-amber-600 font-semibold' : ''}">${l.existing || 0}</td>
+              <td class="py-1 text-right">${isFilled ? '✅' : '⏳'}</td>
+            </tr>`
+          }).join('')}</tbody>
+        </table>
+      </div>
+      <button class="btn-danger text-xs w-full py-1.5 mt-2" id="detail-delete-strategy">Delete Strategy</button>
+    </div>
+  `
+
+  const mPromise = showModal({
+    title: escHtml(stock ? stock.symbol : '') + ' — ' + escHtml(strategy.label),
+    content,
+    confirmText: 'Close',
+    showCancel: false,
+    onMounted: () => {
+      document.getElementById('detail-delete-strategy')?.addEventListener('click', async () => {
+        const ok = await showConfirm({ title: 'Delete Strategy?', message: 'This cannot be undone.', confirmText: 'Delete', danger: true })
+        if (ok) { await deleteStrategy(strategyId); showToast('Strategy deleted'); renderStockList() }
+      })
+    },
+  })
+  await mPromise
+}
+
 async function showStockDetail(stockId) {
   const stock = allStocks.find(s => s._id === stockId)
   if (!stock) return
@@ -1579,6 +1890,8 @@ async function showStockDetail(stockId) {
   const partners = [...new Set(entries.map(e => e.partnerName).filter(Boolean))]
   let selectedPartner = ''
   let stockTab = 'holding'
+  let selectionMode = false
+  let selectedEntryIds = new Set()
 
   function renderDetailContent(partner, tab) {
     const filtered = partner ? entries.filter(e => e.partnerName === partner) : entries
@@ -1614,11 +1927,23 @@ async function showStockDetail(stockId) {
       <div class="flex gap-2 mb-2">
         <button class="view-tab text-xs px-3 py-1 rounded-full font-medium ${tab === 'holding' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600'}" data-view="holding">Holding</button>
         <button class="view-tab text-xs px-3 py-1 rounded-full font-medium ${tab === 'sold' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600'}" data-view="sold">Sold</button>
+        <button class="view-tab text-xs px-3 py-1 rounded-full font-medium ${tab === 'strategy' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600'}" data-view="strategy">Strategy</button>
       </div>
     `
 
     const holdingTable = holding.length > 0 ? `
       <div class="mt-2">
+        <div id="selection-summary" class="hidden flex items-center px-3 py-2 rounded-lg bg-yellow-100 border border-yellow-300 text-xs mb-2 cursor-pointer select-none" title="Double-click to clear selection">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-600">Qty: <span id="sel-qty" class="font-semibold">0</span></span>
+            <span class="text-gray-300">|</span>
+            <span class="text-gray-600">Price: <span id="sel-price" class="font-semibold">-</span></span>
+            <span class="text-gray-300">|</span>
+            <span class="text-gray-600">Val: <span id="sel-value" class="font-semibold">-</span></span>
+            <span class="text-gray-300">|</span>
+            <span class="text-gray-600">ROI: <span id="sel-roi" class="font-semibold">-</span></span>
+          </div>
+        </div>
         <table class="w-full text-xs">
           <thead><tr class="text-gray-400 border-b border-gray-100">
             <th class="text-left py-1 pr-1">Qty</th>
@@ -1633,8 +1958,9 @@ async function showStockDetail(stockId) {
             const v1 = calcV1(e.price, e.minReturn)
             const v2 = calcV2(e.price, e.monthlyRate, days)
             const riskColor = v2 > v1 ? 'text-red-500' : ''
+            const isSelected = selectedEntryIds.has(e._id)
             return `
-              <tr class="border-b border-gray-50">
+              <tr class="holding-row border-b border-gray-50 ${selectionMode ? 'cursor-pointer' : ''} ${isSelected ? 'bg-yellow-100' : ''}" data-entry-id="${e._id}" style="user-select:none">
                 <td class="py-1.5 pr-1">${e.remainingQty}</td>
                 <td class="py-1.5 pr-1">${'₹' + Number(e.price).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
                 <td class="py-1.5 pr-1">${formatDate(e.date)}</td>
@@ -1737,7 +2063,7 @@ async function showStockDetail(stockId) {
           </div>
         ` : ''}
         ${holdingTable}
-      ` : soldTable}
+      ` : tab === 'strategy' ? `<div id="detail-strategy-content"><p class="text-xs text-gray-400 py-2">Loading strategies...</p></div>` : soldTable}
     `
   }
 
@@ -1745,6 +2071,7 @@ async function showStockDetail(stockId) {
     const stockId = stock._id
     document.querySelectorAll('.partner-tab').forEach(tab => {
       tab.addEventListener('click', () => {
+        clearSelection()
         selectedPartner = tab.dataset.partner
         const body = document.querySelector('.modal-body')
         if (body) body.innerHTML = renderDetailContent(selectedPartner, stockTab)
@@ -1752,11 +2079,36 @@ async function showStockDetail(stockId) {
       })
     })
     document.querySelectorAll('.view-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
+      tab.addEventListener('click', async () => {
+        clearSelection()
         stockTab = tab.dataset.view
         const body = document.querySelector('.modal-body')
         if (body) body.innerHTML = renderDetailContent(selectedPartner, stockTab)
         bindDetailActions()
+        if (stockTab === 'strategy') {
+          const c = document.getElementById('detail-strategy-content')
+          if (c) {
+            const strats = await getStrategies(stockId)
+            if (strats.length === 0) {
+              c.innerHTML = `<div class="text-center py-4"><p class="text-xs text-gray-400 mb-2">No strategies yet</p><button class="btn-primary text-xs py-1.5 px-3" id="detail-create-strategy">Create Strategy</button></div>`
+            } else {
+              c.innerHTML = `<div class="space-y-2">${strats.map(s => `
+                <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 cursor-pointer hover:bg-gray-100 detail-strat-link" data-id="${s._id}">
+                  <div>
+                    <div class="text-sm font-medium">${escHtml(s.label)}</div>
+                    <div class="text-[10px] text-gray-400">${Object.keys(s.filledLots || {}).length}/${(s.lots || []).length} lots · ${formatCurrencyFull(s.totalCost)}</div>
+                  </div>
+                  <ion-icon name="chevron-forward-outline" class="text-gray-300"></ion-icon>
+                </div>`).join('')}
+                <button class="btn-primary text-xs py-1.5 px-3 w-full mt-1" id="detail-create-strategy">+ New Strategy</button>
+              </div>`
+            }
+            document.getElementById('detail-create-strategy')?.addEventListener('click', () => showCreateStrategy(stockId))
+            document.querySelectorAll('.detail-strat-link').forEach(el => {
+              el.addEventListener('click', () => showStrategyDetail(el.dataset.id))
+            })
+          }
+        }
       })
     })
     document.querySelectorAll('.stock-edit').forEach(btn => {
@@ -1833,6 +2185,80 @@ async function showStockDetail(stockId) {
       document.getElementById('modal-container').innerHTML = ''
       showStockDetail(stockId)
     }
+  })
+
+  function updateSelectionSummary() {
+    const holding = activeEntries.filter(e => selectedEntryIds.has(e._id))
+    const totalQty = holding.reduce((s, e) => s + e.remainingQty, 0)
+    const avgPrice = totalQty > 0 ? holding.reduce((s, e) => s + e.remainingQty * e.price, 0) / totalQty : 0
+    const totalValue = holding.reduce((s, e) => s + e.remainingQty * calcCurrentValue(e.price, e.monthlyRate, e.minReturn, calcDaysHeld(e.date)), 0)
+    const avgValue = totalQty > 0 ? totalValue / totalQty : 0
+    const roi = avgPrice > 0 ? (avgValue - avgPrice) / avgPrice * 100 : 0
+    const summary = document.getElementById('selection-summary')
+    if (!summary) return
+    if (selectedEntryIds.size === 0) {
+      summary.classList.add('hidden')
+      return
+    }
+    summary.classList.remove('hidden')
+    document.getElementById('sel-qty').textContent = totalQty
+    document.getElementById('sel-price').textContent = formatCurrencyFull(avgPrice)
+    document.getElementById('sel-value').textContent = formatCurrencyFull(avgValue)
+    document.getElementById('sel-roi').textContent = (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%'
+    document.getElementById('sel-roi').className = 'font-semibold ' + (roi >= 0 ? 'text-green-600' : 'text-red-600')
+    document.querySelectorAll('.holding-row').forEach(row => {
+      const id = row.dataset.entryId
+      row.classList.toggle('bg-yellow-100', selectedEntryIds.has(id))
+    })
+  }
+
+  function clearSelection() {
+    selectionMode = false
+    selectedEntryIds.clear()
+    const summary = document.getElementById('selection-summary')
+    if (summary) summary.classList.add('hidden')
+    document.querySelectorAll('.holding-row').forEach(row => row.classList.remove('bg-yellow-100'))
+  }
+
+  let holdTimer = null
+  function startHold(e, rowId) {
+    if (selectionMode) return
+    e.preventDefault()
+    holdTimer = setTimeout(() => {
+      selectionMode = true
+      selectedEntryIds.add(rowId)
+      updateSelectionSummary()
+    }, 500)
+  }
+  function clearHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null } }
+  document.querySelectorAll('.holding-row').forEach(row => {
+    const rowId = row.dataset.entryId
+    row.addEventListener('mousedown', e => startHold(e, rowId))
+    row.addEventListener('mouseup', clearHold)
+    row.addEventListener('mouseleave', clearHold)
+    row.addEventListener('touchstart', e => startHold(e, rowId), { passive: false })
+    row.addEventListener('touchend', clearHold)
+    row.addEventListener('touchcancel', clearHold)
+    row.addEventListener('selectstart', e => e.preventDefault())
+    row.addEventListener('contextmenu', e => e.preventDefault())
+    row.addEventListener('click', (e) => {
+      clearHold()
+      if (!selectionMode) return
+      if (selectedEntryIds.has(rowId)) {
+        selectedEntryIds.delete(rowId)
+        if (selectedEntryIds.size === 0) { clearSelection(); return }
+      } else {
+        selectedEntryIds.add(rowId)
+      }
+      updateSelectionSummary()
+    })
+  })
+
+  let dclickTimer = null
+  document.querySelector('.modal-body')?.addEventListener('click', (e) => {
+    if (!e.target.closest('#selection-summary')) return
+    if (dclickTimer) { clearTimeout(dclickTimer); dclickTimer = null; clearSelection(); return }
+    dclickTimer = setTimeout(() => { dclickTimer = null }, 300)
   })
 }
 
