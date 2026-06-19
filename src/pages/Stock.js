@@ -899,13 +899,42 @@ function calcXIRR(entries) {
 function calcMonthlyInterest(entries, monthlyRate) {
   if (entries.length === 0) return { months: [], totalInterest: 0 }
   const dailyRate = monthlyRate / 30 / 100
+
+  const activeKeys = new Set()
+  for (const e of entries) {
+    if (e.remainingQty > 0) {
+      activeKeys.add(e.stockId + '|' + e.date + '|' + e.price)
+    }
+  }
+
+  function isLifo(e) {
+    return e._lifoSplit || (e.status === 'sold' && e.remainingQty === 0 && activeKeys.has(e.stockId + '|' + e.date + '|' + e.price))
+  }
+
+  const lifoSoldQty = {}
+  for (const e of entries) {
+    if (isLifo(e) && e.status === 'sold') {
+      const key = e.stockId + '|' + e.date + '|' + e.price
+      lifoSoldQty[key] = (lifoSoldQty[key] || 0) + e.qty
+    }
+  }
+
   const events = []
   for (const e of entries) {
-    if (e.status === 'sold' && e.soldDate) {
+    if (isLifo(e)) {
+      if (e.status === 'sold' && e.soldDate) {
+        events.push({ date: new Date(e.soldDate + 'T00:00:00'), amount: -(e.qty * e.price) })
+      }
+    } else {
       events.push({ date: new Date(e.date + 'T00:00:00'), amount: e.qty * e.price })
-      events.push({ date: new Date(e.soldDate + 'T00:00:00'), amount: -(e.qty * e.soldPrice) })
-    } else if (e.remainingQty > 0) {
-      events.push({ date: new Date(e.date + 'T00:00:00'), amount: e.remainingQty * e.price })
+      if (e.status === 'sold' && e.soldDate) {
+        const key = e.stockId + '|' + e.date + '|' + e.price
+        const alreadySold = lifoSoldQty[key] || 0
+        const sellQty = e.qty - alreadySold
+        if (sellQty > 0) {
+          events.push({ date: new Date(e.soldDate + 'T00:00:00'), amount: -(sellQty * e.price) })
+        }
+      }
     }
   }
   if (events.length === 0) return { months: [], totalInterest: 0 }
@@ -1717,84 +1746,159 @@ async function showStrategyDetail(strategyId) {
   const strategy = await getStrategy(strategyId)
   if (!strategy) return
   const stock = allStocks.find(s => s._id === strategy.stockId)
-  const filled = Object.keys(strategy.filledLots || {}).length
-  const total = (strategy.lots || []).length
-  const totalQty = (strategy.lots || []).reduce((s, l) => s + l.qty, 0)
-  const avgPrice = totalQty > 0 ? (strategy.lots || []).reduce((s, l) => s + l.qty * l.price, 0) / totalQty : 0
-  const allEntries = strategy.stockId ? await getStockEntries(strategy.stockId) : []
-  const activeEntries = allEntries.filter(e => e.remainingQty > 0)
-  const totalExisting = activeEntries.reduce((s, e) => s + e.remainingQty, 0)
-  const lotsWithExisting = computeExistingHoldings(strategy.lots || [], activeEntries)
+  const allStrategies = stock ? await getStrategies(stock._id) : []
+  const otherStrats = allStrategies.filter(s => s._id !== strategyId)
+  let currentIdx = 0
+  const strats = [strategy, ...otherStrats]
 
-  const content = `
-    <div class="space-y-3 text-sm">
-      <div class="grid grid-cols-3 gap-2 text-xs">
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Type</div>
-          <div class="font-semibold">${strategy.type || '1234'}</div>
+  function renderContent(s) {
+    const totalQty = (s.lots || []).reduce((a, l) => a + l.qty, 0)
+    const avgPrice = totalQty > 0 ? (s.lots || []).reduce((a, l) => a + l.qty * l.price, 0) / totalQty : 0
+    return { totalQty, avgPrice }
+  }
+
+  async function loadContent(s) {
+    const allEntries = s.stockId ? await getStockEntries(s.stockId) : []
+    const activeEntries = allEntries.filter(e => e.remainingQty > 0)
+    const totalExisting = activeEntries.reduce((a, e) => a + e.remainingQty, 0)
+    const lotsWithExisting = computeExistingHoldings(s.lots || [], activeEntries)
+    const { totalQty, avgPrice } = renderContent(s)
+    const navHtml = strats.length > 1 ? `
+      <div class="flex items-center justify-between mb-2 gap-2">
+        <button class="btn-icon btn-ghost text-base${currentIdx === 0 ? ' opacity-20 pointer-events-none' : ''}" id="strat-prev"><ion-icon name="chevron-back-outline"></ion-icon></button>
+        <span class="text-[10px] text-gray-400">${currentIdx + 1} of ${strats.length}</span>
+        <button class="btn-icon btn-ghost text-base${currentIdx === strats.length - 1 ? ' opacity-20 pointer-events-none' : ''}" id="strat-next"><ion-icon name="chevron-forward-outline"></ion-icon></button>
+      </div>
+    ` : ''
+
+    const bodyHtml = `
+      <div class="space-y-3 text-sm">
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Type</div>
+            <div class="font-semibold">${s.type || '1234'}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Status</div>
+            <div class="font-semibold text-green-600">${s.status}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Total Qty</div>
+            <div class="font-semibold">${totalQty}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Total Investment</div>
+            <div class="font-semibold font-mono">${formatCurrencyFull(s.totalCost)}</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2">
+            <div class="text-gray-400">Target Avg</div>
+            <div class="font-semibold font-mono text-indigo-600">${s.avgPrice.toFixed(1)}</div>
+          </div>
         </div>
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Status</div>
-          <div class="font-semibold text-green-600">${strategy.status}</div>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Total Qty</div>
-          <div class="font-semibold">${totalQty}</div>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Total Investment</div>
-          <div class="font-semibold font-mono">${formatCurrencyFull(strategy.totalCost)}</div>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-2">
-          <div class="text-gray-400">Target Avg</div>
-          <div class="font-semibold font-mono text-indigo-600">${strategy.avgPrice.toFixed(1)}</div>
+        <div id="strategy-range-summary" class="hidden"></div>
+        <div class="overflow-x-auto max-h-64 overflow-y-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="text-gray-400 border-b border-gray-100">
+              <th class="text-left py-1 pr-1">Qty</th>
+              <th class="text-right py-1 pr-1">Price</th>
+              <th class="text-right py-1">Existing</th>
+            </tr></thead>
+            <tbody>${lotsWithExisting.map((l, i) => `
+              <tr class="strategy-lot-row border-b border-gray-50 cursor-pointer" data-index="${i}">
+                <td class="py-1 pr-1">${l.qty}</td>
+                <td class="py-1 pr-1 text-right font-mono">${l.price.toFixed(1)}</td>
+                <td class="py-1 text-right font-mono ${l.existing > 0 ? 'text-amber-600 font-semibold' : ''}">${l.existing}</td>
+              </tr>
+            `).join('')}</tbody>
+            <tfoot><tr class="font-medium">
+              <td class="py-1 pr-1 border-t-2 border-gray-400">${totalQty}</td>
+              <td class="py-1 pr-1 text-right font-mono border-t-2 border-gray-400">${avgPrice.toFixed(1)}</td>
+              <td class="py-1 text-right font-mono border-t-2 border-gray-400${totalExisting > 0 ? ' text-amber-600' : ''}">${totalExisting}</td>
+            </tr></tfoot>
+          </table>
         </div>
       </div>
-      <div class="flex items-center gap-1 text-xs">
-        <span class="text-gray-400">Progress:</span>
-        <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-          <div class="h-full bg-amber-500 rounded-full transition-all" style="width:${total > 0 ? (filled / total * 100) : 0}%"></div>
-        </div>
-        <span class="font-mono text-amber-600">${filled}/${total}</span>
-      </div>
-      <div id="strategy-range-summary" class="hidden"></div>
-      <div class="overflow-x-auto max-h-64 overflow-y-auto">
-        <table class="w-full text-xs">
-          <thead><tr class="text-gray-400 border-b border-gray-100">
-            <th class="text-left py-1 pr-1">Qty</th>
-            <th class="text-right py-1 pr-1">Price</th>
-            <th class="text-right py-1">Existing</th>
-          </tr></thead>
-          <tbody>${lotsWithExisting.map((l, i) => {
-            return `<tr class="strategy-lot-row border-b border-gray-50 cursor-pointer" data-index="${i}">
-              <td class="py-1 pr-1">${l.qty}</td>
-              <td class="py-1 pr-1 text-right font-mono">${l.price.toFixed(1)}</td>
-              <td class="py-1 text-right font-mono ${l.existing > 0 ? 'text-amber-600 font-semibold' : ''}">${l.existing}</td>
-            </tr>`
-          }).join('')}</tbody>
-          <tfoot><tr class="font-medium">
-            <td class="py-1 pr-1 border-t-2 border-gray-400">${totalQty}</td>
-            <td class="py-1 pr-1 text-right font-mono border-t-2 border-gray-400">${avgPrice.toFixed(1)}</td>
-            <td class="py-1 text-right font-mono border-t-2 border-gray-400${totalExisting > 0 ? ' text-amber-600' : ''}">${totalExisting}</td>
-          </tr></tfoot>
-        </table>
-      </div>
-      <div class="flex gap-2 mt-2">
-        <button class="btn-danger text-xs flex-1 py-1.5" id="detail-delete-strategy">Delete Strategy</button>
-      </div>
-    </div>
-  `
+    `
+
+    const body = document.querySelector('.modal-body')
+    if (!body) return
+    body.innerHTML = navHtml + bodyHtml
+
+    document.getElementById('detail-print-strategy')?.addEventListener('click', () => printStrategy(s, stock, lotsWithExisting, totalQty, avgPrice, totalExisting))
+
+    document.getElementById('detail-delete-strategy')?.addEventListener('click', async () => {
+      const ok = await showConfirm({ title: 'Delete Strategy?', message: 'This cannot be undone.', confirmText: 'Delete', danger: true })
+      if (ok) { await deleteStrategy(s._id); showToast('Strategy deleted'); renderStockList(); document.querySelector('#modal-container > div [data-dismiss]')?.click() }
+    })
+
+    const summary = document.getElementById('strategy-range-summary')
+    document.querySelectorAll('.strategy-lot-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const idx = parseInt(row.dataset.index)
+        const range = lotsWithExisting.slice(0, idx + 1)
+        const rQty = range.reduce((a, l) => a + l.qty, 0)
+        const rCost = range.reduce((a, l) => a + l.qty * l.price, 0)
+        const rAvg = rQty > 0 ? rCost / rQty : 0
+        const rExist = range.reduce((a, l) => a + l.existing, 0)
+        const rExistAvg = rExist > 0 ? range.reduce((a, l) => a + l.existing * (l.existingAvgPrice || l.price), 0) / rExist : 0
+        document.querySelectorAll('.strategy-lot-row').forEach(r => r.classList.remove('bg-blue-100'))
+        document.querySelectorAll('.strategy-lot-row').forEach(r => {
+          if (parseInt(r.dataset.index) <= idx) r.classList.add('bg-blue-100')
+        })
+        if (!summary) return
+        summary.className = 'bg-blue-50 rounded-lg p-2 text-xs mb-2 cursor-pointer'
+        summary.innerHTML = `
+          <div class="text-[10px] text-blue-600 font-medium mb-1">Rows 1–${idx + 1}</div>
+          <div class="grid grid-cols-5 gap-1 text-[11px]">
+            <div><span class="text-gray-400">Qty</span><br><span class="font-semibold">${rQty}</span></div>
+            <div><span class="text-gray-400">SAP</span><br><span class="font-semibold font-mono">${rAvg.toFixed(1)}</span></div>
+            <div><span class="text-gray-400">Total</span><br><span class="font-semibold font-mono">${formatCurrencyFull(rCost)}</span></div>
+            <div><span class="text-gray-400">ExQ</span><br><span class="font-semibold font-mono ${rExist > 0 ? 'text-amber-600' : ''}">${rExist}</span></div>
+            <div><span class="text-gray-400">ExAP</span><br><span class="font-semibold font-mono">${rExistAvg.toFixed(1)}</span></div>
+          </div>
+        `
+        summary.addEventListener('click', () => {
+          document.querySelectorAll('.strategy-lot-row').forEach(r => r.classList.remove('bg-blue-100'))
+          summary.classList.add('hidden')
+        }, { once: true })
+      })
+    })
+
+    document.getElementById('strat-prev')?.addEventListener('click', () => {
+      if (currentIdx > 0) { currentIdx--; loadContent(strats[currentIdx]) }
+    })
+    document.getElementById('strat-next')?.addEventListener('click', () => {
+      if (currentIdx < strats.length - 1) { currentIdx++; loadContent(strats[currentIdx]) }
+    })
+
+    const touchArea = body.querySelector('.space-y-3')
+    if (touchArea && strats.length > 1) {
+      let sx = 0
+      touchArea.addEventListener('touchstart', e => { sx = e.touches[0].clientX }, { passive: true })
+      touchArea.addEventListener('touchend', e => {
+        const dx = e.changedTouches[0].clientX - sx
+        if (Math.abs(dx) > 50) {
+          if (dx < 0 && currentIdx < strats.length - 1) { currentIdx++; loadContent(strats[currentIdx]) }
+          else if (dx > 0 && currentIdx > 0) { currentIdx--; loadContent(strats[currentIdx]) }
+        }
+      }, { passive: true })
+    }
+  }
 
   const mPromise = showModal({
-    title: `<span class="inline-flex items-center gap-1.5"><button class="btn-icon btn-ghost text-base -ml-1" id="detail-print-strategy" title="Print"><ion-icon name="print-outline"></ion-icon></button>${escHtml(stock ? stock.symbol : '')} — ${escHtml(strategy.label)}</span>`,
-    content,
+    title: `<span class="inline-flex items-center gap-1"><button class="btn-icon btn-ghost text-base" id="detail-print-strategy" title="Print"><ion-icon name="print-outline"></ion-icon></button><span>${escHtml(stock ? stock.symbol : '')} — ${escHtml(strategy.label)}</span><button class="btn-icon btn-ghost text-base text-red-500 hover:bg-red-50" id="detail-delete-strategy" title="Delete Strategy"><ion-icon name="trash-outline"></ion-icon></button></span>`,
+    content: '<div class="text-xs text-gray-400 text-center py-4">Loading...</div>',
     confirmText: 'Close',
     showCancel: false,
-    onMounted: () => {
-      document.getElementById('detail-print-strategy')?.addEventListener('click', () => {
-        const w = window.open('', '_blank')
-        if (!w) return
-        w.document.write(`<html><head><title>${escHtml(stock ? stock.symbol : '')} - ${escHtml(strategy.label)}</title>
+    onMounted: () => loadContent(strategy),
+  })
+  await mPromise
+}
+
+function printStrategy(strategy, stock, lotsWithExisting, totalQty, avgPrice, totalExisting) {
+  const w = window.open('', '_blank')
+  if (!w) return
+  w.document.write(`<html><head><title>${escHtml(stock ? stock.symbol : '')} - ${escHtml(strategy.label)}</title>
 <style>
 body{font-family:sans-serif;padding:20px;font-size:12px}
 h2{font-size:16px;margin:0 0 8px}
@@ -1830,49 +1934,7 @@ td{padding:4px 6px;border-bottom:1px solid #f5f5f5}
 <div class="footer-note">Generated by Lending Accountant</div>
 <script>window.print()</script>
 </body></html>`)
-        w.document.close()
-      })
-      document.getElementById('detail-delete-strategy')?.addEventListener('click', async () => {
-        const ok = await showConfirm({ title: 'Delete Strategy?', message: 'This cannot be undone.', confirmText: 'Delete', danger: true })
-        if (ok) { await deleteStrategy(strategyId); showToast('Strategy deleted'); renderStockList(); document.querySelector('#modal-container > div [data-dismiss]')?.click() }
-      })
-      function clearRangeSelection() {
-        document.querySelectorAll('.strategy-lot-row').forEach(r => r.classList.remove('bg-blue-100'))
-        const el = document.getElementById('strategy-range-summary')
-        if (el) el.classList.add('hidden')
-      }
-      document.querySelectorAll('.strategy-lot-row').forEach(row => {
-        row.addEventListener('click', () => {
-          const idx = parseInt(row.dataset.index)
-          const range = lotsWithExisting.slice(0, idx + 1)
-          const rQty = range.reduce((s, l) => s + l.qty, 0)
-          const rCost = range.reduce((s, l) => s + l.qty * l.price, 0)
-          const rAvg = rQty > 0 ? rCost / rQty : 0
-          const rExist = range.reduce((s, l) => s + l.existing, 0)
-          const rExistAvg = rExist > 0 ? range.reduce((s, l) => s + l.existing * l.price, 0) / rExist : 0
-          clearRangeSelection()
-          document.querySelectorAll('.strategy-lot-row').forEach(r => {
-            if (parseInt(r.dataset.index) <= idx) r.classList.add('bg-blue-100')
-          })
-          const el = document.getElementById('strategy-range-summary')
-          if (!el) return
-          el.className = 'bg-blue-50 rounded-lg p-2 text-xs mb-2 cursor-pointer'
-          el.innerHTML = `
-            <div class="text-[10px] text-blue-600 font-medium mb-1">Rows 1–${idx + 1}</div>
-            <div class="grid grid-cols-5 gap-1 text-[11px]">
-              <div><span class="text-gray-400">Qty</span><br><span class="font-semibold">${rQty}</span></div>
-              <div><span class="text-gray-400">SAP</span><br><span class="font-semibold font-mono">${rAvg.toFixed(1)}</span></div>
-              <div><span class="text-gray-400">Total</span><br><span class="font-semibold font-mono">${formatCurrencyFull(rCost)}</span></div>
-              <div><span class="text-gray-400">ExQ</span><br><span class="font-semibold font-mono ${rExist > 0 ? 'text-amber-600' : ''}">${rExist}</span></div>
-              <div><span class="text-gray-400">ExAP</span><br><span class="font-semibold font-mono">${rExistAvg.toFixed(1)}</span></div>
-            </div>
-          `
-          el.addEventListener('click', clearRangeSelection, { once: true })
-        })
-      })
-    },
-  })
-  await mPromise
+  w.document.close()
 }
 
 async function showStockDetail(stockId) {
@@ -2049,8 +2111,8 @@ async function showStockDetail(stockId) {
         <div class="grid grid-cols-2 gap-2 text-xs ${totalQty === 0 ? 'text-gray-400' : ''}">
           <div><span class="text-gray-400">Qty</span><br><span class="font-semibold">${totalQty}</span></div>
           <div><span class="text-gray-400">Days</span><br><span class="font-semibold">${avgDays > 0 ? Math.round(avgDays) : '-'}</span></div>
-          <div><span class="text-gray-400">Price</span><br><span class="font-semibold">${avgPrice > 0 ? formatCurrencyFull(avgPrice) : '-'}</span></div>
-          <div><span class="text-gray-400">Value</span><br><span class="font-semibold">${avgValue > 0 ? formatCurrencyFull(avgValue) : '-'}</span></div>
+          <div><span class="text-gray-400">Price</span><br><span class="font-semibold">${avgPrice > 0 ? (avgPrice < 0 ? '-₹' : '₹') + Math.abs(avgPrice).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</span></div>
+          <div><span class="text-gray-400">Value</span><br><span class="font-semibold">${avgValue > 0 ? (avgValue < 0 ? '-₹' : '₹') + Math.abs(avgValue).toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</span></div>
         </div>
         ${holding.length > 0 ? `
           <div class="flex gap-2 mt-2">
@@ -2428,7 +2490,7 @@ async function showBuyForm(stockId, editEntry, preselectedPartner) {
   `
 
   const result = await showModal({
-    title: editEntry ? 'Edit Entry' : 'Buy Stock',
+    title: editEntry ? 'Edit Entry' : `Buy ${escHtml(stock.symbol)}`,
     content,
     confirmText: editEntry ? 'Update' : 'Buy',
     onMounted: () => setupDateInput('bf-date'),
@@ -2509,7 +2571,6 @@ async function showSellForm(stockId, preselectedPartner) {
 
   const content = `
     <div class="space-y-3">
-      <p class="text-sm font-semibold">${escHtml(stock.symbol)}</p>
       <div>
         <label class="input-label mb-2">Partner</label>
         <div class="flex flex-wrap gap-1.5">
@@ -2535,7 +2596,7 @@ async function showSellForm(stockId, preselectedPartner) {
   `
 
   const result = await showModal({
-    title: 'Sell Stock',
+    title: `Sell ${escHtml(stock.symbol)}`,
     content,
     confirmText: 'Sell',
     danger: true,
@@ -2592,6 +2653,7 @@ async function showSellForm(stockId, preselectedPartner) {
         status: 'sold',
         soldPrice: result.price,
         soldDate: result.date,
+        _lifoSplit: true,
       })
     }
   }

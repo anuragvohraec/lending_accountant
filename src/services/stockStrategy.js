@@ -56,10 +56,10 @@ export function computeExistingHoldings(lots, activeEntries) {
   const sorted = [...lots].sort((a, b) => b.price - a.price)
   return sorted.map((lot, i) => {
     const nextPrice = i > 0 ? sorted[i - 1].price : Infinity
-    const existing = activeEntries
-      .filter(e => e.price >= lot.price && e.price < nextPrice)
-      .reduce((s, e) => s + e.remainingQty, 0)
-    return { ...lot, existing }
+    const matched = activeEntries.filter(e => e.price >= lot.price && e.price < nextPrice)
+    const existing = matched.reduce((s, e) => s + e.remainingQty, 0)
+    const existingAvgPrice = existing > 0 ? matched.reduce((s, e) => s + e.remainingQty * e.price, 0) / existing : 0
+    return { ...lot, existing, existingAvgPrice }
   })
 }
 
