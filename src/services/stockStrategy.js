@@ -53,11 +53,11 @@ function round2(n) {
 }
 
 export function computeExistingHoldings(lots, activeEntries) {
-  return lots.map(lot => {
-    const bracketLow = lot.price * 0.97
-    const bracketHigh = lot.price * 1.03
+  const sorted = [...lots].sort((a, b) => b.price - a.price)
+  return sorted.map((lot, i) => {
+    const nextPrice = i > 0 ? sorted[i - 1].price : Infinity
     const existing = activeEntries
-      .filter(e => e.price >= bracketLow && e.price <= bracketHigh)
+      .filter(e => e.price >= lot.price && e.price < nextPrice)
       .reduce((s, e) => s + e.remainingQty, 0)
     return { ...lot, existing }
   })
