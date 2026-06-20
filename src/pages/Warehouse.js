@@ -31,6 +31,7 @@ const S = {
   actOrig: null,      // original element bounds (x,y,w,h)
   editMode: false,
   fullscreen: false,
+  pinching: false,
 }
 let svgEl = null
 let svgWrap = null
@@ -299,6 +300,38 @@ async function showCanvas(whId) {
   svgEl.addEventListener('pointerup', onPointerUp)
   svgEl.addEventListener('pointerleave', onPointerLeave)
   document.getElementById('wh-handle-layer')?.addEventListener('pointerdown', onPointerDown)
+
+  // Pinch-to-zoom
+  let pinchData = null
+  const el = svgWrap
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length >= 2) {
+      pinchData = {
+        startZoom: S.zoom,
+        startPanX: S.panX, startPanY: S.panY,
+        dist: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY),
+        cx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        cy: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      }
+      S.act = null; S.pinching = true
+    }
+  }, { passive: true })
+  el.addEventListener('touchmove', (e) => {
+    if (e.touches.length >= 2 && pinchData) {
+      e.preventDefault()
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+      S.zoom = Math.max(0.2, Math.min(5, pinchData.startZoom * (dist / pinchData.dist)))
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      const dx = (cx - pinchData.cx) * 6 / S.zoom
+      const dy = (cy - pinchData.cy) * 6 / S.zoom
+      S.panX = pinchData.startPanX - dx
+      S.panY = pinchData.startPanY - dy
+      if (!panPending) { panPending = true; requestAnimationFrame(() => { panPending = false; applyViewBox(); renderHandles() }) }
+    }
+  }, { passive: false })
+  el.addEventListener('touchend', () => { pinchData = null; S.pinching = false }, { passive: true })
+  el.addEventListener('touchcancel', () => { pinchData = null; S.pinching = false }, { passive: true })
 }
 
 function centerPan() {
@@ -807,6 +840,7 @@ async function deleteSelected() {
 // ── POINTER EVENTS ──
 
 function onPointerDown(e) {
+  if (S.pinching) return
   if (!S.editMode) {
     // View mode: selection + pan only
     const el = e.target.closest('[data-type]')
@@ -863,6 +897,7 @@ function onPointerDown(e) {
 }
 
 function onPointerMove(e) {
+  if (S.pinching) return
   if (!S.editMode) {
     if (S.act === 'pan') {
       const dx = e.clientX - S.actStart.sx, dy = e.clientY - S.actStart.sy
@@ -1001,11 +1036,13 @@ function updateElementDOM() {
 }
 
 function onPointerLeave(e) {
+  if (S.pinching) return
   if (S.drawing) { S.drawing = false; renderCanvas() }
   S.act = null
 }
 
 async function onPointerUp(e) {
+  if (S.pinching) return
   if (S.act === 'maybe-move') { S.act = null; S.actTarget = null; return }
   if (S.act === 'move' && S.actTarget) {
     S.act = null
