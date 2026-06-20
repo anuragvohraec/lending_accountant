@@ -3,6 +3,7 @@ import { getPendingTodoCount } from '../db/database.js'
 
 const APPS = [
   { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', color: '#F59E0B', route: 'todos', badge: true },
+  { id: 'calculator', label: 'Calculator', icon: 'calculator-outline', color: '#8B5CF6', route: 'calculator' },
 ]
 
 export async function renderApps(main, navigate) {
