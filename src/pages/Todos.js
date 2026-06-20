@@ -357,7 +357,7 @@ export async function renderTodos(container, navigate) {
 
         function docHandler(e) {
           if (noteEl.contains(e.target) || cancelBtn.contains(e.target)) return
-          const val = noteEl.textContent.trim()
+          const val = noteEl.innerText.trim()
           if (val && val !== originalText) {
             item.note = val
             item.updatedAt = new Date().toISOString()
