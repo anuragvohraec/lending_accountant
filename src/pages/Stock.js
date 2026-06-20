@@ -1026,9 +1026,9 @@ async function renderAnalysisSection() {
       </div>
       <div id="analysis-body" class="mt-3 hidden">
         <div class="flex gap-2 mb-3">
-          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-primary text-white" data-tab="returns">Returns</button>
+          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-primary text-white" data-tab="interest">Interest</button>
           <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="targets">Targets</button>
-          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="interest">Interest</button>
+          <button class="analysis-tab text-xs px-3 py-1.5 rounded-full font-medium bg-gray-100 text-gray-600" data-tab="returns">Returns</button>
         </div>
         <div id="analysis-content">
           <div class="text-xs text-gray-400 text-center py-4">Open to load analysis</div>
@@ -1047,7 +1047,7 @@ async function renderAnalysisSection() {
     chevron.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)'
     if (!wasHidden || loaded) return
     loaded = true
-    await renderReturnsTab()
+    await renderInterestTab()
   })
 
   document.querySelectorAll('.analysis-tab').forEach(btn => {
