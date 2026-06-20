@@ -1,12 +1,14 @@
 import { renderCalculator } from '../pages/Calculator.js'
 import { renderTodos } from '../pages/Todos.js'
 import { renderNotebook } from '../pages/Notebook.js'
+import { renderWarehouse } from '../pages/Warehouse.js'
 import { getPendingTodoCount } from '../db/database.js'
 
 const APPS = [
   { id: 'calculator', label: 'Calculator', icon: 'calculator-outline', color: '#8B5CF6', render: renderCalculator },
   { id: 'notebook', label: 'Notebook', icon: 'book-outline', color: '#10B981', render: renderNotebook },
   { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', color: '#F59E0B', render: renderTodos },
+  { id: 'warehouse', label: 'Warehouse', icon: 'business-outline', color: '#6366F1', render: renderWarehouse },
 ].sort((a, b) => a.label.localeCompare(b.label))
 
 export async function showAppsModal() {

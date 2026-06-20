@@ -67,3 +67,27 @@
 .amount-neutral { @apply text-gray-900 font-mono font-semibold; }
 
 .nb-tool-btn { @apply inline-flex items-center gap-0.5 px-2 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-white hover:shadow-sm active:bg-gray-100 transition-colors whitespace-nowrap; }
+
+/* Warehouse SVG Canvas */
+.wh-g-hall { cursor: pointer; }
+.wh-g-hall:hover > rect.wh-hall { filter: brightness(0.97); }
+.wh-g-hall.selected > rect.wh-hall { filter: brightness(1.05); }
+.wh-g-section { cursor: pointer; }
+.wh-g-section:hover > rect.wh-section { filter: brightness(0.97); }
+.wh-g-stock { cursor: pointer; }
+.wh-g-stock:hover > rect.wh-stock { filter: brightness(0.95); }
+.wh-label { pointer-events: none; user-select: none; }
+.wh-tool-btn:disabled { pointer-events: none; }
+.wh-tool-btn { white-space: nowrap; }
+
+.wh-handle { cursor: pointer; }
+.wh-handle[data-handle="tl"], .wh-handle[data-handle="br"] { cursor: nwse-resize; }
+.wh-handle[data-handle="tr"], .wh-handle[data-handle="bl"] { cursor: nesw-resize; }
+.wh-handle[data-handle="tm"], .wh-handle[data-handle="bm"] { cursor: ns-resize; }
+.wh-handle[data-handle="ml"], .wh-handle[data-handle="mr"] { cursor: ew-resize; }
+
+.wh-g-hall, .wh-g-section, .wh-g-stock { cursor: move; }
+
+#wh-canvas-wrap { touch-action: none; overflow: hidden; }
+#wh-svg-wrap { width: 100%; height: 100%; }
+#wh-svg-wrap svg { display: block; }
