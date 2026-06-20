@@ -1,3 +1,5 @@
+import { showAppsModal } from '../services/appsModal.js'
+
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Home', icon: 'home-outline' },
   { id: 'money-sources', label: 'Sources', icon: 'wallet-outline' },
@@ -35,6 +37,9 @@ export async function renderNav(activeId, onNavigate) {
     </div>
   `
   nav.querySelectorAll('[data-route]').forEach((btn) => {
-    btn.addEventListener('click', () => onNavigate(btn.dataset.route))
+    btn.addEventListener('click', () => {
+      if (btn.dataset.route === 'apps') showAppsModal()
+      else onNavigate(btn.dataset.route)
+    })
   })
 }

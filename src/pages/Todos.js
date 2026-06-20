@@ -426,7 +426,7 @@ export async function renderTodos(container, navigate) {
 
   const fab = document.createElement('div')
   fab.id = 'app-fab'
-  fab.className = 'fixed bottom-20 right-4 z-50'
+  fab.className = 'fixed bottom-12 right-4 z-50'
   fab.innerHTML = `<button class="w-14 h-14 rounded-full bg-gradient-to-br from-primary to-vibgyor-violet text-white shadow-lg flex items-center justify-center text-2xl hover:scale-105 active:scale-95 transition-transform" id="todo-fab"><ion-icon name="add-outline"></ion-icon></button>`
   document.body.appendChild(fab)
 

@@ -65,3 +65,5 @@
 .amount-positive { @apply text-green-600 font-mono font-semibold; }
 .amount-negative { @apply text-red-600 font-mono font-semibold; }
 .amount-neutral { @apply text-gray-900 font-mono font-semibold; }
+
+.nb-tool-btn { @apply inline-flex items-center gap-0.5 px-2 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-white hover:shadow-sm active:bg-gray-100 transition-colors whitespace-nowrap; }

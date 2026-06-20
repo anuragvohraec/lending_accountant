@@ -7,8 +7,8 @@ import { renderPartyDetail } from './pages/PartyDetail.js'
 import { renderSearch } from './pages/Search.js'
 import { renderSettings } from './pages/Settings.js'
 import { renderTodos } from './pages/Todos.js'
-import { renderApps } from './pages/Apps.js'
 import { renderCalculator } from './pages/Calculator.js'
+import { renderNotebook } from './pages/Notebook.js'
 import { renderStock } from './pages/Stock.js'
 import { isLockEnabled, getLockMethod, authenticateWithWebAuthn, verifyPin } from './services/pin.js'
 import { showToast } from './components/Toast.js'
@@ -23,8 +23,8 @@ registerRoute('search', renderSearch)
 registerRoute('settings', renderSettings)
 registerRoute('stock', renderStock)
 registerRoute('todos', renderTodos)
-registerRoute('apps', renderApps)
 registerRoute('calculator', renderCalculator)
+registerRoute('notebook', renderNotebook)
 
 let exitConfirmed = false
 
