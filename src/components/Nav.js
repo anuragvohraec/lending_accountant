@@ -4,7 +4,7 @@ const NAV_ITEMS = [
   { id: 'stock', label: 'Stock', icon: 'trending-up-outline' },
   { id: 'parties', label: 'Parties', icon: 'people-outline' },
   { id: 'search', label: 'Search', icon: 'search-outline' },
-  { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', badge: true },
+  { id: 'apps', label: 'Apps', icon: 'grid-outline', badge: true },
   { id: 'settings', label: 'Settings', icon: 'settings-outline' },
 ]
 
@@ -12,7 +12,7 @@ export async function renderNav(activeId, onNavigate) {
   const nav = document.getElementById('app-nav')
 
   let badgeHtml = ''
-  if (NAV_ITEMS.find(i => i.id === 'todos')?.badge) {
+  if (NAV_ITEMS.find(i => i.id === 'apps')?.badge) {
     try {
       const { getPendingTodoCount } = await import('../db/database.js')
       const count = await getPendingTodoCount()

@@ -155,7 +155,7 @@ export async function renderTodos(container, navigate) {
     if (count > 0) {
       if (badge) badge.textContent = count > 99 ? '99+' : count
       else {
-        const todoLink = document.querySelector('.nav-link[data-route="todos"] .relative')
+        const todoLink = document.querySelector('.nav-link[data-route="apps"] .relative')
         if (todoLink) {
           const span = document.createElement('span')
           span.id = 'todo-badge'
