@@ -112,9 +112,9 @@ export async function renderCalendar(container, navigate) {
       else if (isSel) cls += ' bg-indigo-100'
       else cls += ' hover:bg-gray-100'
 
+      const ring = hasTodos ? ' ring-2 ring-red-400 ring-offset-1' : ''
       cells += `<div class="${cls}" data-date="${ds}">
-        <span class="z-10">${d}</span>
-        ${hasTodos ? '<div class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-amber-500"></div>' : ''}
+        <span class="z-10${ring} rounded-full w-7 h-7 flex items-center justify-center">${d}</span>
       </div>`
     }
 
