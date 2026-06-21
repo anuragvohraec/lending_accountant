@@ -438,3 +438,24 @@ export async function deleteStockEntry(id) {
   const doc = await db.get(id)
   return db.remove(doc)
 }
+
+export async function getStockBids() {
+  return allDocs('stockbid_')
+}
+
+export async function saveStockBid(data) {
+  const db = getDb()
+  if (data._id) {
+    const existing = await db.get(data._id)
+    return db.put({ ...existing, ...data })
+  }
+  data._id = 'stockbid_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  data.createdAt = new Date().toISOString()
+  return db.put(data)
+}
+
+export async function deleteStockBid(id) {
+  const db = getDb()
+  const doc = await db.get(id)
+  return db.remove(doc)
+}

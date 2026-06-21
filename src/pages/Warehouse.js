@@ -32,6 +32,7 @@ const S = {
   editMode: false,
   fullscreen: false,
   pinching: false,
+  parties: [],
 }
 let svgEl = null
 let svgWrap = null
@@ -348,6 +349,7 @@ function centerPan() {
 }
 
 async function loadData() {
+  S.parties = await getParties()
   S.halls = await getHalls(S.warehouseId)
   S.sections = []; S.stocks = []
   for (const h of S.halls) {
@@ -688,9 +690,11 @@ function renderDetails() {
       panel.innerHTML = `<div class="flex items-center gap-2 text-sm py-0.5 flex-wrap"><span class="font-semibold text-gray-800">${esc(el.partyName || '')}</span><span class="text-gray-500">·</span><span>${esc(el.itemName || '')}</span><span class="text-gray-400 ml-auto">Qty: ${el.quantity || 0}</span></div>`
       return
     }
+    const partyOptions = S.parties.map(p => `<option value="${esc(p.name)}">`).join('')
     panel.innerHTML = `
       <div class="flex items-center gap-2 text-sm flex-wrap">
-        <input id="wh-edit-party" class="flex-1 min-w-[80px] px-2 py-1 rounded-lg border border-gray-200 text-sm" value="${esc(el.partyName || '')}" placeholder="Party">
+        <input id="wh-edit-party" list="wh-party-list" class="flex-1 min-w-[80px] px-2 py-1 rounded-lg border border-gray-200 text-sm" value="${esc(el.partyName || '')}" placeholder="Party">
+        <datalist id="wh-party-list">${partyOptions}</datalist>
         <input id="wh-edit-item" class="flex-1 min-w-[80px] px-2 py-1 rounded-lg border border-gray-200 text-sm" value="${esc(el.itemName || '')}" placeholder="Item">
         <input id="wh-edit-qty" type="number" class="w-16 px-2 py-1 rounded-lg border border-gray-200 text-sm" value="${el.quantity || 0}" min="0">
         <input id="wh-edit-color" type="color" class="w-8 h-8 rounded border border-gray-200 shrink-0" value="${el.color || '#eef2ff'}">
@@ -1094,11 +1098,13 @@ async function onPointerUp(e) {
   if (S.mode === 'stock' && S.selectedType === 'section') {
     const sec = S.sections.find(s => s._id === S.selectedId)
     if (!sec) { renderCanvas(); return }
-    const partyName = prompt('Party name:')
+    const partyNames = S.parties.map(p => p.name)
+    const partyName = await showPrompt({ title: 'Party name', options: partyNames })
     if (!partyName || !partyName.trim()) { renderCanvas(); return }
-    const itemName = prompt('Item name:')
+    const itemName = await showPrompt({ title: 'Item name', placeholder: 'Item name' })
     if (!itemName || !itemName.trim()) { renderCanvas(); return }
-    const qty = parseInt(prompt('Quantity:') || '0') || 0
+    const qtyStr = await showPrompt({ title: 'Quantity', inputType: 'number', placeholder: '0' })
+    const qty = parseInt(qtyStr || '0') || 0
     await saveStock({ sectionId: sec._id, partyName: partyName.trim(), itemName: itemName.trim(), quantity: qty, x, y, width: w, height: hh })
     await loadData()
     const created = S.stocks.find(st => st.sectionId === sec._id && st.partyName === partyName.trim())

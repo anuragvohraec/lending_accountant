@@ -47,16 +47,19 @@ export function showModal({ title, content, onConfirm, onMounted, confirmText = 
   })
 }
 
-export function showPrompt({ title, message, inputType = 'text', placeholder = '', confirmText = 'OK' }) {
+export function showPrompt({ title, message, inputType = 'text', placeholder = '', confirmText = 'OK', options = null }) {
   const container = document.getElementById('modal-container')
   const modal = document.createElement('div')
   modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center fade-in'
+  const datalistId = options ? 'prompt-datalist-' + Date.now() : ''
+  const listAttr = options ? `list="${datalistId}"` : ''
+  const datalistHtml = options ? `<datalist id="${datalistId}">${options.map(o => `<option value="${o}">`).join('')}</datalist>` : ''
   modal.innerHTML = `
     <div class="fixed inset-0 bg-black/40" data-dismiss></div>
     <div class="relative bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm max-h-[90vh] overflow-y-auto slide-up p-6">
       <h2 class="text-lg font-bold mb-2">${title}</h2>
       ${message ? `<p class="text-sm text-gray-500 mb-4">${message}</p>` : ''}
-      <input type="${inputType}" class="input" id="prompt-input" placeholder="${placeholder}" autofocus />
+      <input type="${inputType}" class="input" id="prompt-input" placeholder="${placeholder}" autofocus ${listAttr} />${datalistHtml}
       <div class="flex gap-3 mt-4">
         <button class="btn-outline flex-1" data-dismiss>Cancel</button>
         <button class="btn-primary flex-1" id="prompt-confirm">${confirmText}</button>

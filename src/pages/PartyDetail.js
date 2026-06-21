@@ -1,4 +1,4 @@
-import { getParty, saveParty, deleteParty, getMoneySources, getAllTransactions, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers, saveSourceTransaction } from '../db/database.js'
+import { getParty, saveParty, deleteParty, getMoneySources, getAllTransactions, getTransactions, saveTransaction, deleteTransaction, getCollaterals, saveCollateral, deleteCollateral, getCollateralImageDataUrl, getLedgers, saveLedger, deleteLedger, migrateLedgers, saveSourceTransaction, deleteSourceTransaction, getSourceTransactions } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate, formatDateTime, accountStatusColor, riskColor, collateralStatusColor } from '../utils/formatters.js'
 import { calculateMonthlyCharges, getOutstandingForParty, getInterestPending, getPartnerWiseOutstanding, getLastInterestChargeDate, getFirstPrincipalDate } from '../services/interest.js'
 import { renderHeader } from '../components/Header.js'
@@ -541,21 +541,192 @@ function renderCollateralList(collaterals, party, allTxns, sources, container, n
   })
 
   el.querySelectorAll('.collateral-image').forEach((img) => {
-    img.addEventListener('click', () => showFullImage(img.dataset.src))
+    img.addEventListener('click', () => {
+      const allImages = collaterals.filter(c => c.image).map(c => ({ src: c.image, label: c.description || c.type }))
+      const idx = allImages.findIndex(i => i.src === img.dataset.src)
+      showFullImage(allImages, Math.max(0, idx))
+    })
   })
 }
 
-function showFullImage(src) {
+function showFullImage(images, startIdx) {
+  if (!images.length) return
+  let idx = startIdx
+  let zoom = 1, panX = 0, panY = 0
+  let pinchData = null
+  let lastTouches = null
+  let swipeStart = null
+
   const overlay = document.createElement('div')
-  overlay.className = 'fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4'
-  overlay.innerHTML = `
-    <button class="absolute top-4 right-4 text-white/70 hover:text-white z-10" id="fullimg-close">
-      <ion-icon name="close-outline" class="text-3xl"></ion-icon>
-    </button>
-    <img src="${src}" class="max-w-full max-h-full rounded-lg object-contain" />
-  `
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove() })
-  overlay.querySelector('#fullimg-close').addEventListener('click', () => overlay.remove())
+  overlay.className = 'fixed inset-0 z-[100] bg-black/90 touch-none'
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.92);touch-action:none;overflow:hidden'
+
+  const container = document.createElement('div')
+  container.className = 'absolute inset-0 flex items-center justify-center'
+
+  const img = document.createElement('img')
+  img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;transition:transform .15s ease;transform-origin:center center;user-select:none;-webkit-user-select:none'
+
+  const loadImage = () => {
+    zoom = 1; panX = 0; panY = 0
+    img.style.transform = 'scale(1) translate(0px, 0px)'
+    img.src = images[idx].src
+    counter.textContent = `${idx + 1} / ${images.length}`
+    label.textContent = images[idx].label || ''
+  }
+
+  const applyTransform = () => {
+    img.style.transform = `scale(${zoom}) translate(${panX}px, ${panY}px)`
+    img.style.transition = 'none'
+  }
+
+  container.appendChild(img)
+  overlay.appendChild(container)
+
+  // Mouse drag pan + cleanup (defined before use)
+  let mouseDown = false, lastMouse = null
+  const onMouseMove = (e) => {
+    if (!mouseDown || !lastMouse) return
+    if (zoom > 1) {
+      const dx = e.clientX - lastMouse.x; const dy = e.clientY - lastMouse.y
+      panX += dx / zoom; panY += dy / zoom
+      lastMouse = { x: e.clientX, y: e.clientY }
+      applyTransform()
+    }
+  }
+  const onMouseUp = () => { mouseDown = false; lastMouse = null }
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+  const cleanup = () => {
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    document.removeEventListener('keydown', onKey)
+    overlay.remove()
+  }
+  const onKey = (e) => { if (e.key === 'Escape') cleanup() }
+
+  // Close button
+  const closeBtn = document.createElement('button')
+  closeBtn.innerHTML = '<ion-icon name="close-outline" class="text-3xl"></ion-icon>'
+  closeBtn.style.cssText = 'position:absolute;top:12px;right:12px;color:rgba(255,255,255,0.7);z-index:10;background:none;border:none;padding:8px'
+  closeBtn.addEventListener('click', cleanup)
+  overlay.appendChild(closeBtn)
+
+  // Counter
+  const counter = document.createElement('div')
+  counter.style.cssText = 'position:absolute;top:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.6);font-size:13px;font-family:monospace;z-index:10;pointer-events:none'
+  overlay.appendChild(counter)
+
+  // Label
+  const label = document.createElement('div')
+  label.style.cssText = 'position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.7);font-size:13px;z-index:10;text-align:center;max-width:80%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none'
+  overlay.appendChild(label)
+
+  // Navigation arrows
+  if (images.length > 1) {
+    const navBtn = (dir) => {
+      const b = document.createElement('button')
+      b.innerHTML = `<ion-icon name="chevron-${dir}-outline" class="text-2xl"></ion-icon>`
+      b.style.cssText = 'position:absolute;top:50%;transform:translateY(-50%);color:rgba(255,255,255,0.7);z-index:10;background:rgba(0,0,0,0.3);border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;cursor:pointer'
+      b.style[dir === 'back' ? 'left' : 'right'] = '8px'
+      b.addEventListener('click', (e) => { e.stopPropagation(); idx = dir === 'back' ? Math.max(0, idx - 1) : Math.min(images.length - 1, idx + 1); loadImage() })
+      return b
+    }
+    overlay.appendChild(navBtn('back'))
+    overlay.appendChild(navBtn('forward'))
+  }
+
+  loadImage()
+
+  // Double-tap to zoom
+  let lastTap = 0
+  img.addEventListener('touchend', (e) => {
+    if (e.changedTouches.length === 1 && !pinchData) {
+      const now = Date.now()
+      if (now - lastTap < 300) {
+        e.preventDefault()
+        if (zoom > 1) { zoom = 1; panX = 0; panY = 0; applyTransform() }
+        else { zoom = 3; panX = 0; panY = 0; applyTransform() }
+        lastTap = 0
+        return
+      }
+      lastTap = now
+    }
+  })
+
+  // Touch pan/swipe/pinch
+  overlay.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() }
+      if (zoom > 1) lastTouches = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    } else if (e.touches.length === 2) {
+      swipeStart = null
+      const t = e.touches
+      pinchData = {
+        zoom: zoom, panX, panY,
+        dist: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY),
+      }
+    }
+  }, { passive: true })
+
+  overlay.addEventListener('touchmove', (e) => {
+    if (pinchData && e.touches.length === 2) {
+      e.preventDefault()
+      const t = e.touches
+      const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+      const newZoom = Math.max(1, Math.min(8, pinchData.zoom * (dist / pinchData.dist)))
+      zoom = newZoom
+      const cx = (t[0].clientX + t[1].clientX) / 2
+      const cy = (t[0].clientY + t[1].clientY) / 2
+      const pdx = (cx - (window.innerWidth / 2)) / zoom
+      const pdy = (cy - (window.innerHeight / 2)) / zoom
+      panX = pinchData.panX + pdx
+      panY = pinchData.panY + pdy
+      applyTransform()
+    } else if (lastTouches && zoom > 1 && e.touches.length === 1) {
+      e.preventDefault()
+      const dx = e.touches[0].clientX - lastTouches.x
+      const dy = e.touches[0].clientY - lastTouches.y
+      panX += dx / zoom; panY += dy / zoom
+      lastTouches = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      applyTransform()
+    }
+  }, { passive: false })
+
+  overlay.addEventListener('touchend', (e) => {
+    if (pinchData) { pinchData = null; lastTouches = null; return }
+    if (swipeStart && e.changedTouches.length === 1 && zoom <= 1) {
+      const dx = e.changedTouches[0].clientX - swipeStart.x
+      const dt = Date.now() - swipeStart.time
+      if (Math.abs(dx) > 50 && dt < 400 && Math.abs(e.changedTouches[0].clientY - swipeStart.y) < 60) {
+        e.preventDefault()
+        if (dx < 0 && idx < images.length - 1) { idx++; loadImage() }
+        else if (dx > 0 && idx > 0) { idx--; loadImage() }
+      }
+    }
+    swipeStart = null; lastTouches = null; pinchData = null
+  }, { passive: true })
+
+  // Mouse wheel zoom
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    const newZoom = Math.max(1, Math.min(8, zoom * delta))
+    if (newZoom !== zoom) {
+      zoom = newZoom
+      if (zoom <= 1) { panX = 0; panY = 0 }
+      applyTransform()
+    }
+  }, { passive: false })
+
+  container.addEventListener('mousedown', (e) => {
+    if (e.button === 0) { mouseDown = true; lastMouse = { x: e.clientX, y: e.clientY } }
+  })
+
+  // ESC / backdrop close
+  overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target === container) cleanup() })
+  document.addEventListener('keydown', onKey)
+
   document.body.appendChild(overlay)
 }
 
@@ -772,6 +943,16 @@ function renderInterestTransactions(txns, sources, party, allTxns, container, na
       const confirmed = await showConfirm({ title: 'Delete Payment?', message: 'This will remove this interest payment entry.', confirmText: 'Delete', danger: true })
       if (!confirmed) return
       const deletedInt = allTxns.find(t => t._id === btn.dataset.id)
+      // Cascade-delete related source transaction records
+      const allocs = deletedInt?.sourceAllocations || []
+      for (const alloc of allocs) {
+        const srcTxns = await getSourceTransactions(alloc.sourceId)
+        for (const st of srcTxns) {
+          if (st.partyId === party._id && st.type === 'credit' && Math.abs(st.amount - alloc.amount) < 0.001) {
+            await deleteSourceTransaction(st._id)
+          }
+        }
+      }
       await deleteTransaction(btn.dataset.id)
       logAction('delete', 'transaction', btn.dataset.id, `Deleted interest payment of ${deletedInt?.amount || '?'} from ${party.name}`)
       showToast('Interest payment deleted')
@@ -1183,6 +1364,7 @@ async function showInterestPaymentForm(party, allTxns, sources, container, navig
         date: paymentDate,
         description: `Interest payment from ${party.name}`,
         partyId: party._id,
+        txnId: result._id,
       })
     }
   }

@@ -150,13 +150,13 @@ export async function renderSettings(container, navigate) {
     const res = await db.allDocs({ startkey: prefix, endkey: prefix + '\uffff' })
     return res.rows.filter(r => !r.id.startsWith('_design/')).length
   }
-  const [sources, parties, txns, collaterals, srcTxns, ledgers, allAuditLogs, todoCount, bookCount, noteCount, whCount, hallCount, secCount, stockCount, stockTxnCount, billCount, symCount, entryCount] = await Promise.all([
+  const [sources, parties, txns, collaterals, srcTxns, ledgers, allAuditLogs, todoCount, bookCount, noteCount, whCount, hallCount, secCount, stockCount, stockTxnCount, billCount, symCount, entryCount, bidCount] = await Promise.all([
     getMoneySources(), getParties(), getAllTransactions(), getCollaterals(), getAllSourceTransactions(), getLedgers(), getAllAuditLogs(),
     countByPrefix('todo_'), countByPrefix('book_'), countByPrefix('note_'),
     countByPrefix('warehouse_'), countByPrefix('whall_'), countByPrefix('wsec_'), countByPrefix('wstock_'), countByPrefix('wstocktxn_'), countByPrefix('wbill_'),
-    countByPrefix('stock_'), countByPrefix('stkentry_'),
+    countByPrefix('stock_'), countByPrefix('stkentry_'), countByPrefix('stockbid_'),
   ])
-  document.getElementById('data-count').textContent = (sources.length + parties.length + txns.length + collaterals.length + srcTxns.length + ledgers.length + allAuditLogs.length + todoCount + bookCount + noteCount + whCount + hallCount + secCount + stockCount + stockTxnCount + billCount + symCount + entryCount) + ' records'
+  document.getElementById('data-count').textContent = (sources.length + parties.length + txns.length + collaterals.length + srcTxns.length + ledgers.length + allAuditLogs.length + todoCount + bookCount + noteCount + whCount + hallCount + secCount + stockCount + stockTxnCount + billCount + symCount + entryCount + bidCount) + ' records'
 
   ;(async () => {
     const el = document.getElementById('sw-version')

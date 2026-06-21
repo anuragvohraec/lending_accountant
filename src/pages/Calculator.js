@@ -47,10 +47,12 @@ export function renderCalculator(main, navigate) {
           <button class="calc-btn bg-gray-50 text-gray-900" data-action="digit">3</button>
           <button class="calc-btn bg-amber-100 text-amber-700" data-action="add">+</button>
 
-          <button class="calc-btn bg-gray-50 text-gray-900 col-span-2" data-action="digit">0</button>
+          <button class="calc-btn bg-gray-100 text-gray-700" data-action="exponent">^</button>
+          <button class="calc-btn bg-gray-50 text-gray-900" data-action="digit">0</button>
           <button class="calc-btn bg-gray-50 text-gray-900" data-action="decimal">.</button>
           <button class="calc-btn bg-primary text-white" data-action="equals">=</button>
         </div>
+        <style>.calc-btn{height:56px}</style>
       </div>
 
       <div class="mt-6">
@@ -118,11 +120,12 @@ export function renderCalculator(main, navigate) {
       case 'subtract': return n1 - n2
       case 'multiply': return n1 * n2
       case 'divide': return n2 !== 0 ? n1 / n2 : NaN
+      case 'exponent': return Math.pow(n1, n2)
       default: return n2
     }
   }
 
-  const SYM = { add: '+', subtract: '−', multiply: '×', divide: '÷' }
+  const SYM = { add: '+', subtract: '−', multiply: '×', divide: '÷', exponent: '^' }
 
   function handleOperator(op) {
     if (state.operator && !state.reset) {
@@ -233,7 +236,7 @@ export function renderCalculator(main, navigate) {
       else if (action === 'negate') negate()
       else if (action === 'percent') percent()
       else if (action === 'equals') handleEquals()
-      else if (['add', 'subtract', 'multiply', 'divide'].includes(action)) handleOperator(action)
+      else if (['add', 'subtract', 'multiply', 'divide', 'exponent'].includes(action)) handleOperator(action)
       updateDisplay()
     })
   })

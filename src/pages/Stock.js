@@ -1,4 +1,4 @@
-import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry, deleteStockSymbol, getAllStockEntries } from '../db/database.js'
+import { getMoneySources, getAllStockSymbols, saveStockSymbol, getStockEntries, getStockEntry, saveStockEntry, deleteStockEntry, deleteStockSymbol, getAllStockEntries, getStockBids, saveStockBid, deleteStockBid } from '../db/database.js'
 import { getSettings, saveSettings } from '../db/database.js'
 import { formatCurrency, formatCurrencyFull, formatDate } from '../utils/formatters.js'
 import { dateInputHTML, setupDateInput, getDateInputValue, setDateInputValue } from '../utils/dateInput.js'
@@ -27,6 +27,8 @@ export async function renderStock(container, navigate) {
   container.innerHTML = `
     <div class="slide-up">
       <div id="stock-summary" class="card-flat mb-3 hidden"></div>
+      <div id="stock-ltp-alert" class="mb-3"></div>
+      <div id="stock-bidding" class="mb-3"></div>
       <div id="stock-pareto" class="mb-3"></div>
       <div id="stock-trade-viewer" class="mb-3"></div>
       <div id="stock-analysis" class="mb-3"></div>
@@ -301,6 +303,261 @@ async function renderStockList() {
   }
 
   renderParetoAnalysis(entriesByStock)
+  renderLtpAlert(entriesByStock)
+  renderStockBidding()
+}
+
+async function renderLtpAlert(entriesByStock) {
+  const container = document.getElementById('stock-ltp-alert')
+  if (!container) return
+
+  const rows = []
+  for (const s of allStocks) {
+    const entries = entriesByStock[s._id] || []
+    const active = entries.filter(e => e.remainingQty > 0)
+    const ltp = getCachedPrice(s.symbol)
+    if (ltp == null) continue
+    for (const e of active) {
+      const days = calcDaysHeld(e.date)
+      const valPerShare = calcCurrentValue(e.price, e.monthlyRate, e.minReturn, days)
+      if (ltp >= valPerShare * 0.98) {
+        rows.push({
+          symbol: s.symbol,
+          qty: e.remainingQty,
+          price: e.price,
+          value: valPerShare,
+          ltp,
+          pctDiff: (ltp - valPerShare) / valPerShare * 100,
+        })
+      }
+    }
+  }
+
+  if (rows.length === 0) {
+    container.innerHTML = ''
+    return
+  }
+
+  container.innerHTML = `
+    <div class="card-flat">
+      <div class="flex items-center justify-between cursor-pointer select-none" id="ltp-alert-toggle">
+        <div class="flex items-center gap-2">
+          <ion-icon name="pulse-outline" class="text-amber-500 text-sm"></ion-icon>
+          <span class="text-sm font-semibold">Near Exit / In Profit</span>
+          <span class="text-[10px] text-gray-400">(${rows.length})</span>
+        </div>
+        <ion-icon name="chevron-down-outline" class="text-gray-400 transition-transform" id="ltp-alert-chevron"></ion-icon>
+      </div>
+      <div id="ltp-alert-body" class="mt-3 hidden">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-400 border-b border-gray-100">
+            <th class="text-left py-1 pr-1">Stock</th>
+            <th class="text-right py-1 pr-1">Qty</th>
+            <th class="text-right py-1 pr-1">Price</th>
+            <th class="text-right py-1 pr-1">Value</th>
+            <th class="text-right py-1 pr-1">LTP</th>
+            <th class="text-right py-1">% Diff</th>
+          </tr></thead>
+          <tbody>${rows.map(r => {
+            const pctClass = r.pctDiff >= 0 ? 'text-green-600' : 'text-amber-600'
+            return `<tr class="border-b border-gray-50">
+              <td class="py-1.5 pr-1 font-semibold">${escHtml(r.symbol)}</td>
+              <td class="py-1.5 pr-1 text-right">${r.qty}</td>
+              <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.price)}</td>
+              <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.value)}</td>
+              <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.ltp)}</td>
+              <td class="py-1.5 text-right font-mono ${pctClass}">${r.pctDiff >= 0 ? '+' : ''}${r.pctDiff.toFixed(1)}%</td>
+            </tr>`
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+  `
+
+  document.getElementById('ltp-alert-toggle').addEventListener('click', () => {
+    const body = document.getElementById('ltp-alert-body')
+    const chevron = document.getElementById('ltp-alert-chevron')
+    body.classList.toggle('hidden')
+    chevron.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)'
+  })
+}
+
+async function renderStockBidding() {
+  const container = document.getElementById('stock-bidding')
+  if (!container) return
+
+  const bids = await getStockBids()
+
+  const rows = bids.map(b => {
+    const ltp = getCachedPrice(b.symbol)
+    const diff = ltp != null ? ltp - b.bidPrice : null
+    const diffPct = ltp != null && b.bidPrice > 0 ? (ltp - b.bidPrice) / b.bidPrice * 100 : null
+    return { ...b, ltp, diff, diffPct }
+  })
+
+  rows.sort((a, b) => {
+    const da = a.diff != null ? Math.abs(a.diff) : Infinity
+    const db = b.diff != null ? Math.abs(b.diff) : Infinity
+    return da - db
+  })
+
+  container.innerHTML = `
+    <div class="card-flat">
+      <div class="flex items-center justify-between cursor-pointer select-none" id="bidding-toggle">
+        <div class="flex items-center gap-2">
+          <ion-icon name="flag-outline" class="text-orange-500 text-sm"></ion-icon>
+          <span class="text-sm font-semibold">Nearby Bidding</span>
+          <span class="text-[10px] text-gray-400">(${bids.length})</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="text-xs text-orange-600 font-medium flex items-center gap-0.5" id="bidding-add-btn"><ion-icon name="add-circle-outline"></ion-icon> Add</button>
+          <ion-icon name="chevron-down-outline" class="text-gray-400 transition-transform" id="bidding-chevron"></ion-icon>
+        </div>
+      </div>
+      <div id="bidding-body" class="mt-2${bids.length > 0 ? '' : ' hidden'}">
+        ${bids.length === 0 ? '<p class="text-xs text-gray-400 text-center py-3">No bids yet. Tap Add to create one.</p>' : `
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-400 border-b border-gray-100">
+            <th class="text-left py-1 pr-1">Stock</th>
+            <th class="text-right py-1 pr-1">Qty</th>
+            <th class="text-right py-1 pr-1">Bid</th>
+            <th class="text-right py-1 pr-1">LTP</th>
+            <th class="text-right py-1">Diff</th>
+            <th class="text-right py-1 w-14"></th>
+          </tr></thead>
+          <tbody>${rows.map(r => {
+            const diffColor = r.diff != null ? (r.diff >= 0 ? 'text-green-600' : 'text-red-600') : ''
+            const diffPctStr = r.diffPct != null ? (r.diffPct >= 0 ? '+' : '') + r.diffPct.toFixed(1) + '%' : '-'
+            return `<tr class="border-b border-gray-50" data-id="${r._id}">
+              <td class="py-1.5 pr-1 font-semibold">${escHtml(r.symbol)}</td>
+              <td class="py-1.5 pr-1 text-right">${r.qty}</td>
+              <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.bidPrice)}</td>
+              <td class="py-1.5 pr-1 text-right font-mono">${r.ltp != null ? formatCurrencyFull(r.ltp) : '-'}</td>
+              <td class="py-1.5 text-right font-mono ${diffColor}">${diffPctStr}</td>
+              <td class="py-1.5 text-right">
+                <button class="text-primary bid-edit text-sm leading-none" data-id="${r._id}"><ion-icon name="create-outline"></ion-icon></button>
+                <button class="text-red-500 bid-delete text-sm leading-none ml-1" data-id="${r._id}"><ion-icon name="trash-outline"></ion-icon></button>
+              </td>
+            </tr>`
+          }).join('')}</tbody>
+        </table>
+        `}
+      </div>
+    </div>
+  `
+
+  document.getElementById('bidding-toggle').addEventListener('click', (e) => {
+    if (e.target.closest('#bidding-add-btn')) return
+    const body = document.getElementById('bidding-body')
+    const chevron = document.getElementById('bidding-chevron')
+    body.classList.toggle('hidden')
+    chevron.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)'
+  })
+
+  document.getElementById('bidding-add-btn').addEventListener('click', showAddBidForm)
+
+  document.querySelectorAll('.bid-edit').forEach(btn => {
+    btn.addEventListener('click', () => showEditBidForm(btn.dataset.id))
+  })
+  document.querySelectorAll('.bid-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await showConfirm({ title: 'Delete Bid?', message: 'Remove this bid entry?', confirmText: 'Delete', danger: true })
+      if (ok) { await deleteStockBid(btn.dataset.id); renderStockBidding() }
+    })
+  })
+}
+
+async function showAddBidForm() {
+  const existingSymbols = allStocks.map(s => s.symbol)
+  const content = `
+    <div class="space-y-3">
+      <div>
+        <label class="input-label">Stock Symbol</label>
+        <input class="input uppercase" id="bf-symbol" placeholder="e.g. RELIANCE" list="bid-suggest" />
+        <datalist id="bid-suggest">${existingSymbols.map(s => `<option value="${escHtml(s)}">`).join('')}</datalist>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="input-label">Bid Price</label>
+          <input class="input" id="bf-price" type="number" step="0.01" min="0" />
+        </div>
+        <div>
+          <label class="input-label">Qty</label>
+          <input class="input" id="bf-qty" type="number" step="1" min="1" />
+        </div>
+      </div>
+    </div>
+  `
+
+  const result = await showModal({
+    title: 'Add Bid',
+    content,
+    confirmText: 'Add',
+    onConfirm: () => {
+      const symbol = document.getElementById('bf-symbol')?.value.trim().toUpperCase()
+      const bidPrice = parseFloat(document.getElementById('bf-price')?.value)
+      const qty = parseInt(document.getElementById('bf-qty')?.value)
+      if (!symbol) { showToast('Symbol is required', 'error'); return false }
+      if (!bidPrice || bidPrice <= 0) { showToast('Valid bid price is required', 'error'); return false }
+      if (!qty || qty <= 0) { showToast('Valid quantity is required', 'error'); return false }
+      return { symbol, bidPrice, qty }
+    },
+  })
+
+  if (!result || result === true) return
+  await saveStockBid(result)
+  showToast('Bid added')
+  renderStockBidding()
+}
+
+async function showEditBidForm(bidId) {
+  const bids = await getStockBids()
+  const bid = bids.find(b => b._id === bidId)
+  if (!bid) return
+  const existingSymbols = allStocks.map(s => s.symbol)
+
+  const content = `
+    <div class="space-y-3">
+      <div>
+        <label class="input-label">Stock Symbol</label>
+        <input class="input uppercase" id="bf-symbol" value="${escHtml(bid.symbol)}" list="bid-suggest" />
+        <datalist id="bid-suggest">${existingSymbols.map(s => `<option value="${escHtml(s)}">`).join('')}</datalist>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="input-label">Bid Price</label>
+          <input class="input" id="bf-price" type="number" step="0.01" min="0" value="${bid.bidPrice}" />
+        </div>
+        <div>
+          <label class="input-label">Qty</label>
+          <input class="input" id="bf-qty" type="number" step="1" min="1" value="${bid.qty}" />
+        </div>
+      </div>
+    </div>
+  `
+
+  const result = await showModal({
+    title: 'Edit Bid',
+    content,
+    confirmText: 'Save',
+    onConfirm: () => {
+      const symbol = document.getElementById('bf-symbol')?.value.trim().toUpperCase()
+      const bidPrice = parseFloat(document.getElementById('bf-price')?.value)
+      const qty = parseInt(document.getElementById('bf-qty')?.value)
+      if (!symbol) { showToast('Symbol is required', 'error'); return false }
+      if (!bidPrice || bidPrice <= 0) { showToast('Valid bid price is required', 'error'); return false }
+      if (!qty || qty <= 0) { showToast('Valid quantity is required', 'error'); return false }
+      return { symbol, bidPrice, qty }
+    },
+  })
+
+  if (!result || result === true) return
+  bid.symbol = result.symbol
+  bid.bidPrice = result.bidPrice
+  bid.qty = result.qty
+  await saveStockBid(bid)
+  showToast('Bid updated')
+  renderStockBidding()
 }
 
 async function showStockMenu() {
