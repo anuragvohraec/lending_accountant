@@ -1383,9 +1383,11 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
     <div class="space-y-3">
       <div>
         <label class="input-label">Photo</label>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
           <input type="file" accept="image/*" id="col-image" class="hidden" />
-          <button class="btn-outline text-sm" id="col-image-btn"><ion-icon name="camera-outline" class="mr-1"></ion-icon>Choose Photo</button>
+          <input type="file" accept="image/*" capture="environment" id="col-image-camera" class="hidden" />
+          <button class="btn-outline text-sm" id="col-image-btn"><ion-icon name="images-outline" class="mr-1"></ion-icon>Gallery</button>
+          <button class="btn-outline text-sm" id="col-camera-btn"><ion-icon name="camera-outline" class="mr-1"></ion-icon>Camera</button>
           ${imageData ? `<img src="${imageData}" class="w-14 h-14 rounded-lg object-cover" />` : '<div id="col-image-preview" class="hidden"></div>'}
         </div>
       </div>
@@ -1434,24 +1436,24 @@ async function showCollateralForm(editCollateral, partyId, collaterals, party, a
     content,
     confirmText: isEdit ? 'Update' : 'Add',
     onMounted: () => {
+      const handleFile = (file) => {
+        if (!file) return
+        selectedFile = file
+        imageData = URL.createObjectURL(file)
+        const preview = document.getElementById('col-image-preview')
+        if (preview) {
+          preview.innerHTML = `<img src="${imageData}" class="w-14 h-14 rounded-lg object-cover" />`
+          preview.classList.remove('hidden')
+        }
+      }
       document.getElementById('col-image-btn')?.addEventListener('click', () => {
         document.getElementById('col-image')?.click()
       })
-      document.getElementById('col-image')?.addEventListener('change', (e) => {
-        const file = e.target.files[0]
-        if (!file) return
-        selectedFile = file
-        const reader = new FileReader()
-        reader.onload = (ev) => {
-          imageData = ev.target.result
-          const preview = document.getElementById('col-image-preview')
-          if (preview) {
-            preview.innerHTML = `<img src="${imageData}" class="w-14 h-14 rounded-lg object-cover" />`
-            preview.classList.remove('hidden')
-          }
-        }
-        reader.readAsDataURL(file)
+      document.getElementById('col-image')?.addEventListener('change', (e) => handleFile(e.target.files[0]))
+      document.getElementById('col-camera-btn')?.addEventListener('click', () => {
+        document.getElementById('col-image-camera')?.click()
       })
+      document.getElementById('col-image-camera')?.addEventListener('change', (e) => handleFile(e.target.files[0]))
     },
     onConfirm: () => {
       const desc = document.getElementById('col-desc')?.value.trim()
