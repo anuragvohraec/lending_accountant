@@ -5,6 +5,27 @@ import { showConfirm } from '../components/Modal.js'
 import { logAction } from '../services/audit.js'
 import { renderHeader } from '../components/Header.js'
 
+function onDoubleTap(el, fn) {
+  let lastTouch = 0
+  el.addEventListener('touchend', (e) => {
+    const now = Date.now()
+    if (now - lastTouch < 350) { e.preventDefault(); fn() }
+    lastTouch = now
+  }, { passive: false })
+  el.addEventListener('dblclick', (e) => { e.preventDefault(); fn() })
+}
+
+function todayISO() {
+  const d = new Date()
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+function fmtDate(iso) {
+  if (!iso) return '-'
+  const p = iso.slice(0, 10).split('-')
+  return p[2] + '/' + p[1] + '/' + p[0].slice(-2)
+}
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -247,6 +268,132 @@ export async function renderCalendar(container, navigate) {
         await saveTodo(todo)
         todos = await getAllTodos()
         render()
+      })
+    })
+
+    el.querySelectorAll('.todo-target-date').forEach(targetEl => {
+      onDoubleTap(targetEl, () => {
+        const item = todos.find(t => t._id === targetEl.closest('.todo-item').dataset.id)
+        if (!item) return
+        const currentFmt = item.targetDate ? fmtDate(item.targetDate) : fmtDate(todayISO())
+        const currentIso = item.targetDate || todayISO()
+
+        targetEl.innerHTML = `
+          <div class="flex items-center gap-1">
+            <input type="text" class="input text-xs py-0.5 px-1 w-24 text-center target-date-text" value="${currentFmt}" inputmode="numeric" autocomplete="off">
+            <input type="date" class="target-date-native hidden" value="${currentIso}">
+            <button class="target-date-picker text-gray-500 p-0.5 shrink-0" title="Pick date">
+              <ion-icon name="calendar-outline" class="text-sm"></ion-icon>
+            </button>
+          </div>
+        `
+
+        const textInput = targetEl.querySelector('.target-date-text')
+        const native = targetEl.querySelector('.target-date-native')
+        const pickerBtn = targetEl.querySelector('.target-date-picker')
+
+        textInput.focus()
+        textInput.select()
+
+        function parseDate(str) {
+          const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})?(\d{2})$/)
+          if (!m) return null
+          let dd = parseInt(m[1]), mm = parseInt(m[2]), yy = m[4] || m[3]
+          if (yy.length === 2) yy = '20' + yy
+          if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return null
+          return yy + '-' + String(mm).padStart(2, '0') + '-' + String(dd).padStart(2, '0')
+        }
+
+        function fmtToDisplay(iso) {
+          if (!iso) return ''
+          const p = iso.slice(0, 10).split('-')
+          return p[2] + '/' + p[1] + '/' + p[0].slice(-2)
+        }
+
+        function commit(val) {
+          const parsed = val || textInput.value
+          const iso = parseDate(parsed)
+          item.targetDate = iso || todayISO()
+          item.updatedAt = new Date().toISOString()
+          saveTodo(item)
+          todos = [...todos]
+          render()
+        }
+
+        textInput.addEventListener('blur', () => commit(null))
+        textInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') textInput.blur()
+          if (e.key === 'Escape') { textInput.value = currentFmt; textInput.blur() }
+        })
+
+        native.addEventListener('change', () => {
+          if (native.value) {
+            textInput.value = fmtToDisplay(native.value)
+            commit(native.value)
+          }
+        })
+
+        pickerBtn.addEventListener('click', () => {
+          native.showPicker ? native.showPicker() : native.click()
+        })
+      })
+    })
+
+    el.querySelectorAll('.todo-note').forEach(noteEl => {
+      onDoubleTap(noteEl, () => {
+        if (noteEl.contentEditable === 'true') return
+        const item = todos.find(t => t._id === noteEl.closest('.todo-item').dataset.id)
+        if (!item) return
+        const originalText = item.note || ''
+        let editing = true
+
+        noteEl.contentEditable = 'true'
+        noteEl.classList.remove('cursor-pointer', 'select-none')
+        noteEl.focus()
+
+        const cancelBtn = document.createElement('button')
+        cancelBtn.className = 'absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-red-100 text-red-500 hover:bg-red-200 leading-none shadow-sm z-10'
+        cancelBtn.innerHTML = '<ion-icon name="close-outline" class="text-sm"></ion-icon>'
+        cancelBtn.title = 'Cancel edits'
+        noteEl.style.position = 'relative'
+        noteEl.appendChild(cancelBtn)
+
+        function clearEditUI() {
+          if (!editing) return
+          editing = false
+          if (cancelBtn.parentNode) cancelBtn.remove()
+          noteEl.style.position = ''
+          noteEl.contentEditable = 'false'
+          noteEl.classList.add('cursor-pointer', 'select-none')
+          document.removeEventListener('click', docHandler, true)
+        }
+
+        function docHandler(e) {
+          if (noteEl.contains(e.target) || cancelBtn.contains(e.target)) return
+          const val = noteEl.innerText.trim()
+          if (val && val !== originalText) {
+            item.note = val
+            item.updatedAt = new Date().toISOString()
+            saveTodo(item)
+            logAction('update', 'todo', item._id, `Edited todo: ${val.slice(0, 50)}`)
+            showToast('ToDo updated')
+          }
+          clearEditUI()
+        }
+        document.addEventListener('click', docHandler, true)
+
+        cancelBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          noteEl.textContent = originalText
+          clearEditUI()
+        })
+
+        noteEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            noteEl.textContent = originalText
+            clearEditUI()
+          }
+        })
       })
     })
   }
