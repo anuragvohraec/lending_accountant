@@ -2,6 +2,7 @@ import { renderCalculator } from '../pages/Calculator.js'
 import { renderTodos } from '../pages/Todos.js'
 import { renderNotebook } from '../pages/Notebook.js'
 import { renderWarehouse } from '../pages/Warehouse.js'
+import { renderMiniBrowser } from '../pages/MiniBrowser.js'
 import { getPendingTodoCount } from '../db/database.js'
 
 const APPS = [
@@ -9,6 +10,7 @@ const APPS = [
   { id: 'notebook', label: 'Notebook', icon: 'book-outline', color: '#10B981', render: renderNotebook },
   { id: 'todos', label: 'ToDo', icon: 'checkbox-outline', color: '#F59E0B', render: renderTodos },
   { id: 'warehouse', label: 'Warehouse', icon: 'business-outline', color: '#6366F1', render: renderWarehouse },
+  { id: 'browser', label: 'Browser', icon: 'browsers-outline', color: '#3B82F6', render: renderMiniBrowser },
 ].sort((a, b) => a.label.localeCompare(b.label))
 
 export async function showAppsModal() {
