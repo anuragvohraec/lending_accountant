@@ -503,13 +503,13 @@ async function renderStockBidding() {
   })
 
   document.querySelectorAll('#bidding-table thead th[data-sort]').forEach(th => {
-    th.addEventListener('click', (e) => {
+    th.addEventListener('click', async (e) => {
       e.stopPropagation()
       const col = th.dataset.sort
       biddingSort = { col, dir: biddingSort.col === col && biddingSort.dir === 'asc' ? 'desc' : 'asc' }
       const body = document.getElementById('bidding-body')
       const wasOpen = body && !body.classList.contains('hidden')
-      renderStockBidding()
+      await renderStockBidding()
       if (wasOpen) {
         document.getElementById('bidding-body').classList.remove('hidden')
         document.getElementById('bidding-chevron').style.transform = 'rotate(180deg)'
