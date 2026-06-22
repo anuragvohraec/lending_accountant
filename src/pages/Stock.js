@@ -15,6 +15,19 @@ import { escHtml } from '../utils/helpers.js'
 let allPartners = []
 let allStocks = []
 let selectedPartners = new Set()
+let ltpAlertSort = { col: 'pctDiff', dir: 'desc' }
+let biddingSort = { col: 'diff', dir: 'asc' }
+
+function sortRows(rows, col, dir) {
+  const d = dir === 'asc' ? 1 : -1
+  rows.sort((a, b) => {
+    const va = a[col], vb = b[col]
+    if (typeof va === 'string') return va.localeCompare(vb) * d
+    if (va == null) return 1
+    if (vb == null) return -1
+    return (va - vb) * d
+  })
+}
 
 export async function renderStock(container, navigate) {
   const settings = await getSettings()
@@ -327,6 +340,7 @@ async function renderLtpAlert(entriesByStock) {
           price: e.price,
           value: valPerShare,
           ltp,
+          pnl: (ltp - valPerShare) * e.remainingQty,
           pctDiff: (ltp - valPerShare) / valPerShare * 100,
         })
       }
@@ -337,6 +351,11 @@ async function renderLtpAlert(entriesByStock) {
     container.innerHTML = ''
     return
   }
+
+  const { col, dir } = ltpAlertSort
+  sortRows(rows, col, dir)
+
+  const arrow = (c) => col === c ? (dir === 'asc' ? ' \u25B2' : ' \u25BC') : ''
 
   container.innerHTML = `
     <div class="card-flat">
@@ -349,23 +368,26 @@ async function renderLtpAlert(entriesByStock) {
         <ion-icon name="chevron-down-outline" class="text-gray-400 transition-transform" id="ltp-alert-chevron"></ion-icon>
       </div>
       <div id="ltp-alert-body" class="mt-3 hidden">
-        <table class="w-full text-xs">
+        <table class="w-full text-xs" id="ltp-alert-table">
           <thead><tr class="text-gray-400 border-b border-gray-100">
-            <th class="text-left py-1 pr-1">Stock</th>
-            <th class="text-right py-1 pr-1">Qty</th>
-            <th class="text-right py-1 pr-1">Price</th>
-            <th class="text-right py-1 pr-1">Value</th>
-            <th class="text-right py-1 pr-1">LTP</th>
-            <th class="text-right py-1">% Diff</th>
+            <th class="text-left py-1 pr-1 cursor-pointer select-none" data-sort="symbol">Stock${arrow('symbol')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="qty">Qty${arrow('qty')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="price">Price${arrow('price')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="value">Value${arrow('value')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="ltp">LTP${arrow('ltp')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="pnl">P&L${arrow('pnl')}</th>
+            <th class="text-right py-1 cursor-pointer select-none" data-sort="pctDiff">% Diff${arrow('pctDiff')}</th>
           </tr></thead>
           <tbody>${rows.map(r => {
             const pctClass = r.pctDiff >= 0 ? 'text-green-600' : 'text-amber-600'
+            const pnlClass = r.pnl >= 0 ? 'text-green-600' : 'text-amber-600'
             return `<tr class="border-b border-gray-50">
               <td class="py-1.5 pr-1 font-semibold">${escHtml(r.symbol)}</td>
               <td class="py-1.5 pr-1 text-right">${r.qty}</td>
               <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.price)}</td>
               <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.value)}</td>
               <td class="py-1.5 pr-1 text-right font-mono">${formatCurrencyFull(r.ltp)}</td>
+              <td class="py-1.5 pr-1 text-right font-mono ${pnlClass}">${r.pnl >= 0 ? '+' : ''}${formatCurrencyFull(r.pnl)}</td>
               <td class="py-1.5 text-right font-mono ${pctClass}">${r.pctDiff >= 0 ? '+' : ''}${r.pctDiff.toFixed(1)}%</td>
             </tr>`
           }).join('')}</tbody>
@@ -379,6 +401,21 @@ async function renderLtpAlert(entriesByStock) {
     const chevron = document.getElementById('ltp-alert-chevron')
     body.classList.toggle('hidden')
     chevron.style.transform = body.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)'
+  })
+
+  document.querySelectorAll('#ltp-alert-table thead th[data-sort]').forEach(th => {
+    th.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const col = th.dataset.sort
+      ltpAlertSort = { col, dir: ltpAlertSort.col === col && ltpAlertSort.dir === 'asc' ? 'desc' : 'asc' }
+      const body = document.getElementById('ltp-alert-body')
+      const wasOpen = body && !body.classList.contains('hidden')
+      renderLtpAlert(entriesByStock)
+      if (wasOpen) {
+        document.getElementById('ltp-alert-body').classList.remove('hidden')
+        document.getElementById('ltp-alert-chevron').style.transform = 'rotate(180deg)'
+      }
+    })
   })
 }
 
@@ -395,11 +432,10 @@ async function renderStockBidding() {
     return { ...b, ltp, diff, diffPct }
   })
 
-  rows.sort((a, b) => {
-    const da = a.diff != null ? Math.abs(a.diff) : Infinity
-    const db = b.diff != null ? Math.abs(b.diff) : Infinity
-    return da - db
-  })
+  const { col, dir } = biddingSort
+  sortRows(rows, col, dir)
+
+  const arrow = (c) => col === c ? (dir === 'asc' ? ' \u25B2' : ' \u25BC') : ''
 
   container.innerHTML = `
     <div class="card-flat">
@@ -416,13 +452,13 @@ async function renderStockBidding() {
       </div>
       <div id="bidding-body" class="mt-2${bids.length > 0 ? '' : ' hidden'}">
         ${bids.length === 0 ? '<p class="text-xs text-gray-400 text-center py-3">No bids yet. Tap Add to create one.</p>' : `
-        <table class="w-full text-xs">
+        <table class="w-full text-xs" id="bidding-table">
           <thead><tr class="text-gray-400 border-b border-gray-100">
-            <th class="text-left py-1 pr-1">Stock</th>
-            <th class="text-right py-1 pr-1">Qty</th>
-            <th class="text-right py-1 pr-1">Bid</th>
-            <th class="text-right py-1 pr-1">LTP</th>
-            <th class="text-right py-1">Diff</th>
+            <th class="text-left py-1 pr-1 cursor-pointer select-none" data-sort="symbol">Stock${arrow('symbol')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="qty">Qty${arrow('qty')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="bidPrice">Bid${arrow('bidPrice')}</th>
+            <th class="text-right py-1 pr-1 cursor-pointer select-none" data-sort="ltp">LTP${arrow('ltp')}</th>
+            <th class="text-right py-1 cursor-pointer select-none" data-sort="diff">Diff${arrow('diff')}</th>
             <th class="text-right py-1 w-14"></th>
           </tr></thead>
           <tbody>${rows.map(r => {
@@ -463,6 +499,21 @@ async function renderStockBidding() {
     btn.addEventListener('click', async () => {
       const ok = await showConfirm({ title: 'Delete Bid?', message: 'Remove this bid entry?', confirmText: 'Delete', danger: true })
       if (ok) { await deleteStockBid(btn.dataset.id); renderStockBidding() }
+    })
+  })
+
+  document.querySelectorAll('#bidding-table thead th[data-sort]').forEach(th => {
+    th.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const col = th.dataset.sort
+      biddingSort = { col, dir: biddingSort.col === col && biddingSort.dir === 'asc' ? 'desc' : 'asc' }
+      const body = document.getElementById('bidding-body')
+      const wasOpen = body && !body.classList.contains('hidden')
+      renderStockBidding()
+      if (wasOpen) {
+        document.getElementById('bidding-body').classList.remove('hidden')
+        document.getElementById('bidding-chevron').style.transform = 'rotate(180deg)'
+      }
     })
   })
 }
